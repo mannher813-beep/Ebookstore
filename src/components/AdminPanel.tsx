@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Trash2, Database, ShieldCheck, DollarSign, ListOrdered, Code, ArrowUpRight, HelpCircle, FileText, UploadCloud, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { Ebook, Achat } from "../types";
+import { API_BASE_URL } from "../supabaseClient";
 
 interface AdminPanelProps {
   ebooks: Ebook[];
@@ -39,7 +40,7 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
       const session = supabase ? (await supabase.auth.getSession()).data.session : null;
       const token = session ? `Bearer ${session.access_token}` : "";
 
-      const res = await fetch("/api/transactions", {
+      const res = await fetch(`${API_BASE_URL}/api/transactions`, {
         headers: {
           "Authorization": token
         }
@@ -542,22 +543,6 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
                 </span>
               </div>
             </div>
-          </div>
-
-          {/* Quick Manual / Deploy guidelines */}
-          <div className="bg-indigo-50/70 border border-indigo-100/60 rounded-2xl p-6 shadow-sm space-y-3.5">
-            <h3 className="font-display font-bold text-sm text-indigo-900 flex items-center gap-1.5">
-              <Code className="h-4 w-4" /> Manuel de Déploiement
-            </h3>
-            <p className="text-xs text-indigo-800 leading-relaxed">
-              Pour connecter vos comptes réels et déployer en production sur <strong>Cloudflare / Cloud Run</strong>, configurez les variables d'environnement suivantes dans votre panneau de contrôle :
-            </p>
-            <ul className="space-y-2 text-xs font-mono text-indigo-900">
-              <li>1. <strong className="font-sans text-slate-800 font-bold">VITE_SUPABASE_URL</strong> : URL projet</li>
-              <li>2. <strong className="font-sans text-slate-800 font-bold">VITE_SUPABASE_ANON_KEY</strong> : Clé publique</li>
-              <li>3. <strong className="font-sans text-slate-800 font-bold">SUPABASE_SERVICE_ROLE_KEY</strong> : Clé de bypass</li>
-              <li>4. <strong className="font-sans text-slate-800 font-bold">MONEYFUSION_API_URL</strong> : Endpoint MoneyFusion</li>
-            </ul>
           </div>
         </div>
       </div>

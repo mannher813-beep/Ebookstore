@@ -7,7 +7,7 @@ import AuthModal from "./components/AuthModal";
 import AdminPanel from "./components/AdminPanel";
 import PurchaseList from "./components/PurchaseList";
 import { Ebook, Achat, PaymentStatus } from "./types";
-import { hasSupabaseKeys, supabase } from "./supabaseClient";
+import { hasSupabaseKeys, supabase, API_BASE_URL } from "./supabaseClient";
 
 export default function App() {
   // Navigation & Views
@@ -107,7 +107,7 @@ export default function App() {
 
   const handleVerifyPaymentOnReturn = async (token: string) => {
     try {
-      const res = await fetch(`/api/payments/status/${token}`);
+      const res = await fetch(`${API_BASE_URL}/api/payments/status/${token}`);
       if (res.ok) {
         const updatedPurchase = await res.json();
         if (updatedPurchase.statut === "paid") {
@@ -177,7 +177,7 @@ export default function App() {
   const fetchConfigStatus = async () => {
     setLoadingConfig(true);
     try {
-      const res = await fetch("/api/config-status");
+      const res = await fetch(`${API_BASE_URL}/api/config-status`);
       if (res.ok) {
         const data = await res.json();
         setConfigStatus(data);
@@ -193,7 +193,7 @@ export default function App() {
     setLoadingEbooks(true);
     setDbError(null);
     try {
-      const res = await fetch("/api/ebooks");
+      const res = await fetch(`${API_BASE_URL}/api/ebooks`);
       if (res.ok) {
         const data = await res.json();
         setEbooks(data);
@@ -212,7 +212,7 @@ export default function App() {
   // Fetch real User Profile and Purchases via backend
   const fetchUserProfileAndData = async (userId: string, token: string, userEmail?: string) => {
     try {
-      const res = await fetch("/api/user-data", {
+      const res = await fetch(`${API_BASE_URL}/api/user-data`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -238,7 +238,7 @@ export default function App() {
       const session = supabase ? (await supabase.auth.getSession()).data.session : null;
       const token = session ? `Bearer ${session.access_token}` : "";
 
-      const res = await fetch("/api/ebooks", {
+      const res = await fetch(`${API_BASE_URL}/api/ebooks`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -267,7 +267,7 @@ export default function App() {
       const session = supabase ? (await supabase.auth.getSession()).data.session : null;
       const token = session ? `Bearer ${session.access_token}` : "";
 
-      const res = await fetch("/api/ebooks/" + id, {
+      const res = await fetch(`${API_BASE_URL}/api/ebooks/` + id, {
         method: "DELETE",
         headers: {
           "Authorization": token
@@ -334,7 +334,7 @@ export default function App() {
       };
 
       console.log("Requesting payment session creation...", payload);
-      const res = await fetch("/api/payments/create", {
+      const res = await fetch(`${API_BASE_URL}/api/payments/create`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -374,7 +374,7 @@ export default function App() {
     }
 
     try {
-      const res = await fetch(`/api/download/${ebookId}`, {
+      const res = await fetch(`${API_BASE_URL}/api/download/${ebookId}`, {
         headers: {
           Authorization: `Bearer ${authToken}`,
         },
@@ -406,7 +406,7 @@ export default function App() {
   // Manual Check Status for Webhook Synchronization
   const handleRefreshPurchaseStatus = async (token: string) => {
     try {
-      const res = await fetch(`/api/payments/status/${token}`);
+      const res = await fetch(`${API_BASE_URL}/api/payments/status/${token}`);
       if (res.ok) {
         const updatedPurchase = await res.json();
 
