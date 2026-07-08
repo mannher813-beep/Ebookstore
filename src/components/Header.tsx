@@ -13,7 +13,6 @@ interface HeaderProps {
   selectedCategory: string;
   setSelectedCategory: (category: string) => void;
   categories: string[];
-  configStatus: { isRealProduction: boolean; supabaseUrl: string; moneyfusionUrl: string };
 }
 
 export default function Header({
@@ -28,35 +27,9 @@ export default function Header({
   selectedCategory,
   setSelectedCategory,
   categories,
-  configStatus,
 }: HeaderProps) {
   return (
     <header className="sticky top-0 z-40 w-full bg-white border-b border-slate-200 shadow-sm font-sans">
-      {/* Configuration Status Notice Bar */}
-      {!configStatus.isRealProduction ? (
-        <div className="w-full bg-indigo-50/70 border-b border-indigo-100 py-2 px-4 flex items-center justify-between text-xs text-indigo-900">
-          <div className="flex items-center gap-2 mx-auto sm:mx-0">
-            <AlertTriangle className="h-4 w-4 text-indigo-600 shrink-0 animate-pulse" />
-            <span>
-              <strong>Mode Simulateur Actif</strong> : Les clés de production Supabase ou MoneyFusion ne sont pas encore détectées. Tout est simulé en local de manière interactive !
-            </span>
-          </div>
-          <button
-            onClick={() => setView("admin")}
-            className="hidden sm:flex items-center gap-1 font-bold text-indigo-700 underline hover:text-indigo-950 cursor-pointer"
-          >
-            <Terminal className="h-3.5 w-3.5" /> Voir Configuration
-          </button>
-        </div>
-      ) : (
-        <div className="w-full bg-emerald-50 border-b border-emerald-200 py-2 px-4 flex items-center justify-center text-xs text-emerald-800 font-medium">
-          <span className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            Connexion Réelle Active : Connecté à Supabase & API MoneyFusion Production.
-          </span>
-        </div>
-      )}
-
       {/* Main Navbar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         {/* Logo */}

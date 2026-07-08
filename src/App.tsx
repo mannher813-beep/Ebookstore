@@ -1,18 +1,17 @@
 import React, { useState, useEffect } from "react";
-import { CreditCard, Phone, CheckCircle, Shield, Sparkles, ShoppingBag, X, AlertCircle } from "lucide-react";
+import { CreditCard, Phone, Shield, ShoppingBag, X, AlertTriangle, RefreshCw, KeyRound, CheckCircle2 } from "lucide-react";
 import Header from "./components/Header";
 import EbookCard from "./components/EbookCard";
 import BookDetailModal from "./components/BookDetailModal";
 import AuthModal from "./components/AuthModal";
 import AdminPanel from "./components/AdminPanel";
 import PurchaseList from "./components/PurchaseList";
-import PaymentSimulator from "./components/PaymentSimulator";
 import { Ebook, Achat, PaymentStatus } from "./types";
-import { getSimulatedUser, setSimulatedUser, hasSupabaseKeys, supabase } from "./supabaseClient";
+import { hasSupabaseKeys, supabase } from "./supabaseClient";
 
 export default function App() {
   // Navigation & Views
-  const [currentView, setView] = useState<string>("catalog"); // catalog, my-purchases, admin, payment-simulator
+  const [currentView, setView] = useState<string>("catalog"); // catalog, my-purchases, admin
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [selectedEbook, setSelectedEbook] = useState<Ebook | null>(null);
 
@@ -40,21 +39,21 @@ export default function App() {
   // Downloading State
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-  // Simulator State Parameters
-  const [simulatorParams, setSimulatorParams] = useState<{
-    token: string;
-    price: number;
-    ebookTitle: string;
-    clientName: string;
-  } | null>(null);
-
-  // Config Status Overview
-  const [configStatus, setConfigStatus] = useState({
+  // Diagnostic Config Status Overview
+  const [configStatus, setConfigStatus] = useState<{
+    isRealProduction: boolean;
+    supabaseUrl: string;
+    moneyfusionUrl: string;
+    supabaseServiceKey: string;
+    missingServerVars: string[];
+  }>({
     isRealProduction: false,
     supabaseUrl: "Chargement...",
     moneyfusionUrl: "Chargement...",
     supabaseServiceKey: "Chargement...",
+    missingServerVars: [],
   });
+  const [loadingConfig, setLoadingConfig] = useState(true);
 
   // 1. Load Initial Configuration Status & Ebooks
   useEffect(() => {
@@ -62,10 +61,9 @@ export default function App() {
     fetchEbooks();
   }, []);
 
-  // 2. Auth State Sync (Real vs Simulated)
+  // 2. Auth State Sync with real Supabase
   useEffect(() => {
     if (hasSupabaseKeys && supabase) {
-      // Sync real Supabase Auth
       supabase.auth.getSession().then(({ data: { session } }) => {
         if (session?.user) {
           setUser({ id: session.user.id, email: session.user.email! });
@@ -88,18 +86,11 @@ export default function App() {
       });
 
       return () => subscription.unsubscribe();
-    } else {
-      // Sync Simulated Auth
-      const sim = getSimulatedUser();
-      if (sim) {
-        setUser({ id: sim.id, email: sim.email });
-        setRole(sim.role);
-        fetchUserDataSimulated();
-      }
     }
   }, [currentView]);
 
   const fetchConfigStatus = async () => {
+    setLoadingConfig(true);
     try {
       const res = await fetch("/api/config-status");
       if (res.ok) {
@@ -107,7 +98,9 @@ export default function App() {
         setConfigStatus(data);
       }
     } catch (err) {
-      console.error("Failed to fetch config status:", err);
+      console.error("Failed to fetch config status from backend:", err);
+    } finally {
+      setLoadingConfig(false);
     }
   };
 
@@ -144,24 +137,7 @@ export default function App() {
     }
   };
 
-  // Fetch simulated purchases
-  const fetchUserDataSimulated = async () => {
-    try {
-      const res = await fetch("/api/user-data", {
-        headers: {
-          Authorization: "Bearer mock-token-" + (getSimulatedUser()?.role || "user"),
-        },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setPurchases(data.purchases);
-      }
-    } catch (err) {
-      console.error("Error fetching simulated user data:", err);
-    }
-  };
-
-  // 3. Admin: Add Ebook
+  // Admin: Add Ebook
   const handleAddEbook = async (ebookData: Omit<Ebook, "id">): Promise<boolean> => {
     try {
       const res = await fetch("/api/ebooks", {
@@ -180,7 +156,7 @@ export default function App() {
     }
   };
 
-  // 4. Admin: Delete Ebook
+  // Admin: Delete Ebook
   const handleDeleteEbook = async (id: string): Promise<boolean> => {
     try {
       const res = await fetch("/api/ebooks/" + id, {
@@ -197,23 +173,17 @@ export default function App() {
     }
   };
 
-  // 5. Auth Success Handler
+  // Auth Success Handler
   const handleLoginSuccess = (userData: { id: string; email: string }, userRole: string) => {
     setUser(userData);
     setRole(userRole);
-    if (!hasSupabaseKeys) {
-      setSimulatedUser({ id: userData.id, email: userData.email, role: userRole as any });
-      fetchUserDataSimulated();
-    }
     setAuthModalOpen(false);
   };
 
-  // 6. Logout Handler
+  // Logout Handler
   const handleLogout = async () => {
-    if (hasSupabaseKeys && supabase) {
+    if (supabase) {
       await supabase.auth.signOut();
-    } else {
-      setSimulatedUser(null);
     }
     setUser(null);
     setRole("user");
@@ -221,11 +191,11 @@ export default function App() {
     setView("catalog");
   };
 
-  // 7. Initiate MoneyFusion Payment Flow
+  // Initiate MoneyFusion Payment Flow
   const handleOpenCheckout = (ebook: Ebook) => {
     setCheckoutEbook(ebook);
     setPhoneInput("");
-    setClientNameInput(user?.email.split("@")[0] || "John Doe");
+    setClientNameInput(user?.email.split("@")[0] || "Client");
     setPurchaseError(null);
     setCheckoutModalOpen(true);
   };
@@ -237,9 +207,8 @@ export default function App() {
     setIsPurchasing(true);
     setPurchaseError(null);
 
-    // Get Auth token
-    let authToken = "mock-token-" + role;
-    if (hasSupabaseKeys && supabase) {
+    let authToken = "";
+    if (supabase) {
       const session = (await supabase.auth.getSession()).data.session;
       authToken = session?.access_token || "";
     }
@@ -268,23 +237,10 @@ export default function App() {
       if (res.ok && data.statut) {
         setCheckoutModalOpen(false);
         setSelectedEbook(null); // close detail modal if open
-
-        // If returned URL contains our payment simulator path, capture parameters internally
-        if (data.url.includes("/simulateur-paiement")) {
-          const urlObj = new URL(data.url, window.location.origin);
-          setSimulatorParams({
-            token: urlObj.searchParams.get("token") || "",
-            price: Number(urlObj.searchParams.get("price") || 0),
-            ebookTitle: urlObj.searchParams.get("ebook") || "",
-            clientName: urlObj.searchParams.get("client") || "",
-          });
-          setView("payment-simulator");
-        } else {
-          // REAL PRODUCTION REDIRECT TO MONEYFUSION SECURE CHECKOUT PAGE
-          window.location.href = data.url;
-        }
+        // Redirect client to MoneyFusion secure production checkout page
+        window.location.href = data.url;
       } else {
-        setPurchaseError(data.error || "Une erreur s'est produite lors du contact avec MoneyFusion.");
+        setPurchaseError(data.error || "Une erreur s'est produite lors de l'initialisation du paiement MoneyFusion.");
       }
     } catch (err: any) {
       setPurchaseError("Erreur réseau ou serveur : " + err.message);
@@ -293,12 +249,12 @@ export default function App() {
     }
   };
 
-  // 8. Secure Signed Downloader Trigger
+  // Secure Signed Downloader Trigger
   const handleDownloadEbook = async (ebookId: string) => {
     setDownloadingId(ebookId);
-    let authToken = "mock-token-" + role;
+    let authToken = "";
 
-    if (hasSupabaseKeys && supabase) {
+    if (supabase) {
       const session = (await supabase.auth.getSession()).data.session;
       authToken = session?.access_token || "";
     }
@@ -314,7 +270,6 @@ export default function App() {
         const data = await res.json();
         console.log("Received signed download URL:", data);
 
-        // Instantly trigger virtual download link anchor
         const link = document.createElement("a");
         link.href = data.url;
         link.download = data.filename || "ebook.pdf";
@@ -334,7 +289,7 @@ export default function App() {
     }
   };
 
-  // 9. Manual Check Status for Webhook Synchronization
+  // Manual Check Status for Webhook Synchronization
   const handleRefreshPurchaseStatus = async (token: string) => {
     try {
       const res = await fetch(`/api/payments/status/${token}`);
@@ -342,11 +297,9 @@ export default function App() {
         const updatedPurchase = await res.json();
 
         // Refresh list
-        if (hasSupabaseKeys && supabase) {
+        if (supabase) {
           const session = (await supabase.auth.getSession()).data.session;
           if (session) fetchUserProfileAndData(user!.id, session.access_token);
-        } else {
-          await fetchUserDataSimulated();
         }
 
         if (updatedPurchase.statut === PaymentStatus.PAID) {
@@ -361,6 +314,95 @@ export default function App() {
       console.error("Error checking status:", err);
     }
   };
+
+  // Determine if there are missing environment variables
+  const missingClientVars: string[] = [];
+  const clientSupUrl = (import.meta as any).env.VITE_SUPABASE_URL;
+  const clientSupKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
+
+  if (!clientSupUrl) missingClientVars.push("VITE_SUPABASE_URL (Client)");
+  if (!clientSupKey) missingClientVars.push("VITE_SUPABASE_ANON_KEY (Client)");
+
+  const isConfigError = missingClientVars.length > 0 || configStatus.missingServerVars?.length > 0;
+
+  // ==========================================
+  // CONFIGURATION ERROR RENDER INTERFACE (FAIL-CLOSED)
+  // ==========================================
+  if (isConfigError && !loadingConfig) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center p-4 font-sans select-none">
+        <div className="max-w-xl w-full bg-slate-950/80 border border-red-500/30 rounded-3xl p-6 sm:p-10 shadow-2xl relative overflow-hidden space-y-8 animate-in fade-in duration-500">
+          
+          {/* Accent decoration */}
+          <div className="absolute right-0 top-0 w-32 h-32 bg-red-600/10 blur-3xl rounded-full"></div>
+          
+          {/* Header */}
+          <div className="flex items-center gap-4 border-b border-slate-800 pb-5">
+            <div className="p-3.5 bg-red-500/10 text-red-500 rounded-2xl border border-red-500/20">
+              <AlertTriangle className="h-7 w-7" />
+            </div>
+            <div>
+              <h1 className="font-display font-black text-xl sm:text-2xl tracking-tight text-white leading-none">
+                Erreur de Configuration
+              </h1>
+              <p className="text-xs text-red-400 mt-1.5 font-medium">Production Uniquement - Mode Simulateur Désactivé</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+              Pour des raisons de sécurité, cette boutique d'ebooks fonctionne exclusivement en mode réel avec de vraies clés. Le système a détecté des variables d'environnement manquantes qui empêchent son démarrage.
+            </p>
+
+            {/* Error Message Details */}
+            <div className="space-y-3.5 pt-2">
+              <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono">
+                Variables d'environnement requises manquantes :
+              </span>
+              
+              <div className="space-y-2.5">
+                {/* Client keys check */}
+                {missingClientVars.map((v) => (
+                  <div key={v} className="p-3 bg-red-500/5 border border-red-500/20 rounded-xl flex items-center gap-3 text-xs text-red-300 font-mono">
+                    <KeyRound className="h-4 w-4 shrink-0 text-red-500" />
+                    <span>Configuration manquante : {v} n'est pas définie</span>
+                  </div>
+                ))}
+
+                {/* Server keys check */}
+                {configStatus.missingServerVars?.map((v) => (
+                  <div key={v} className="p-3 bg-red-500/5 border border-red-500/20 rounded-xl flex items-center gap-3 text-xs text-red-300 font-mono">
+                    <KeyRound className="h-4 w-4 shrink-0 text-red-500" />
+                    <span>Configuration manquante : {v} n'est pas définie</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Guidelines on how to fix */}
+          <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-5 space-y-2 text-xs text-slate-400 leading-relaxed">
+            <p className="font-bold text-slate-200">Comment résoudre ce problème ?</p>
+            <p>
+              Veuillez définir l'ensemble de ces clés dans votre panneau de configuration d'hébergement ou votre fichier d'environnement local. Les variables attendues sont détaillées dans le fichier <code className="text-indigo-400 font-mono">.env.example</code>.
+            </p>
+          </div>
+
+          {/* Retry Button */}
+          <button
+            onClick={() => {
+              fetchConfigStatus();
+              fetchEbooks();
+            }}
+            className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/10 hover:shadow-indigo-600/20"
+          >
+            <RefreshCw className="h-4 w-4" />
+            <span>Vérifier à nouveau</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Categories list
   const categories = ["all", ...new Set(ebooks.map((eb) => eb.categorie))].filter((cat) => cat !== "all") as string[];
@@ -392,7 +434,6 @@ export default function App() {
         selectedCategory={selectedCategory}
         setSelectedCategory={setSelectedCategory}
         categories={categories}
-        configStatus={configStatus}
       />
 
       {/* Main Container */}
@@ -480,20 +521,6 @@ export default function App() {
             onAddEbook={handleAddEbook}
             onDeleteEbook={handleDeleteEbook}
             configStatus={configStatus}
-          />
-        )}
-
-        {/* PAYMENT SIMULATOR SCREEN */}
-        {currentView === "payment-simulator" && simulatorParams && (
-          <PaymentSimulator
-            token={simulatorParams.token}
-            price={simulatorParams.price}
-            ebookTitle={simulatorParams.ebookTitle}
-            clientName={simulatorParams.clientName}
-            onPaymentProcessed={() => {
-              setSimulatorParams(null);
-              setView("my-purchases");
-            }}
           />
         )}
       </main>

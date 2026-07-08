@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { X, Mail, Lock, Sparkles, AlertCircle, Info, LogIn, CheckCircle } from "lucide-react";
-import { hasSupabaseKeys } from "../supabaseClient";
+import { X, Mail, Lock, AlertCircle, LogIn, CheckCircle } from "lucide-react";
+import { supabase } from "../supabaseClient";
 
 interface AuthModalProps {
   onClose: () => void;
@@ -15,21 +15,6 @@ export default function AuthModal({ onClose, onLoginSuccess }: AuthModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
-
-  // Simulated logins (one-click simulation for testing)
-  const handleSimulatedLogin = (type: "user" | "admin") => {
-    setLoading(true);
-    setTimeout(() => {
-      const simulatedUser = {
-        id: type === "admin" ? "mock-user-123" : "mock-user-456",
-        email: type === "admin" ? "techsen237@gmail.com" : "customer@example.com",
-        role: type,
-      };
-      onLoginSuccess(simulatedUser, type);
-      setLoading(false);
-      onClose();
-    }, 600);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,72 +33,57 @@ export default function AuthModal({ onClose, onLoginSuccess }: AuthModalProps) {
       return;
     }
 
-    // REAL SUPABASE AUTH INTEGRATION
-    if (hasSupabaseKeys) {
-      const { supabase } = await import("../supabaseClient");
-      if (!supabase) return;
+    if (!supabase) {
+      setError("Le client Supabase n'est pas initialisé.");
+      setLoading(false);
+      return;
+    }
 
-      try {
-        if (isMagicLink) {
-          // Magic Link flow
-          const { error: authErr } = await supabase.auth.signInWithOtp({
-            email,
-            options: {
-              emailRedirectTo: window.location.origin + "/mes-achats",
-            }
-          });
-          if (authErr) throw authErr;
-          setMagicLinkSent(true);
-        } else if (isSignUp) {
-          // Normal SignUp flow
-          const { data, error: authErr } = await supabase.auth.signUp({
-            email,
-            password,
-          });
-          if (authErr) throw authErr;
-          if (data.user) {
-            // Fetch default role (usually 'user' created via DB trigger)
-            onLoginSuccess({ id: data.user.id, email: data.user.email! }, "user");
-            onClose();
+    try {
+      if (isMagicLink) {
+        // Magic Link flow
+        const { error: authErr } = await supabase.auth.signInWithOtp({
+          email,
+          options: {
+            emailRedirectTo: window.location.origin + "/mes-achats",
           }
-        } else {
-          // Normal SignIn flow
-          const { data, error: authErr } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-          });
-          if (authErr) throw authErr;
-          if (data.user) {
-            // Retrieve actual role from database
-            const { data: profile } = await supabase
-              .from("profiles")
-              .select("role")
-              .eq("id", data.user.id)
-              .single();
-
-            onLoginSuccess({ id: data.user.id, email: data.user.email! }, profile?.role || "user");
-            onClose();
-          }
+        });
+        if (authErr) throw authErr;
+        setMagicLinkSent(true);
+      } else if (isSignUp) {
+        // Normal SignUp flow
+        const { data, error: authErr } = await supabase.auth.signUp({
+          email,
+          password,
+        });
+        if (authErr) throw authErr;
+        if (data.user) {
+          onLoginSuccess({ id: data.user.id, email: data.user.email! }, "user");
+          onClose();
         }
-      } catch (err: any) {
-        setError(err.message || "Une erreur d'authentification s'est produite.");
-      } finally {
-        setLoading(false);
+      } else {
+        // Normal SignIn flow
+        const { data, error: authErr } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (authErr) throw authErr;
+        if (data.user) {
+          // Retrieve actual role from database
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("role")
+            .eq("id", data.user.id)
+            .single();
+
+          onLoginSuccess({ id: data.user.id, email: data.user.email! }, profile?.role || "user");
+          onClose();
+        }
       }
-    } else {
-      // SIMULATOR MODE SUBMISSION
-      setTimeout(() => {
-        const isAdmin = email.toLowerCase() === "techsen237@gmail.com" || email.includes("admin");
-        const role = isAdmin ? "admin" : "user";
-        const simulatedUser = {
-          id: isAdmin ? "mock-user-123" : "mock-user-456",
-          email: email,
-          role: role,
-        };
-        onLoginSuccess(simulatedUser, role);
-        setLoading(false);
-        onClose();
-      }, 500);
+    } catch (err: any) {
+      setError(err.message || "Une erreur d'authentification s'est produite.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -248,39 +218,6 @@ export default function AuthModal({ onClose, onLoginSuccess }: AuthModalProps) {
                 </button>
               </div>
             </form>
-          )}
-
-          {/* SIMULATOR QUICK ACCORDION */}
-          {!hasSupabaseKeys && !magicLinkSent && (
-            <div className="mt-6 pt-5 border-t border-slate-100 space-y-3">
-              <div className="flex items-start gap-2 text-[11px] text-indigo-700 bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-100/50 leading-relaxed">
-                <Info className="h-4 w-4 shrink-0 text-indigo-600 mt-0.5" />
-                <span>
-                  <strong>Information de test :</strong> Puisque Supabase n'est pas encore connecté, le système utilise l'<strong>Authentification Simulée</strong>. Entrez n'importe quelle adresse email, ou utilisez les connexions rapides ci-dessous :
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleSimulatedLogin("user")}
-                  disabled={loading}
-                  className="py-2 px-3 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
-                >
-                  <Sparkles className="h-3.5 w-3.5 text-indigo-500" />
-                  <span>Client Simulé</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSimulatedLogin("admin")}
-                  disabled={loading}
-                  className="py-2 px-3 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-800 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
-                >
-                  <Sparkles className="h-3.5 w-3.5 text-indigo-600 animate-bounce" />
-                  <span>Admin Simulé</span>
-                </button>
-              </div>
-            </div>
           )}
         </div>
       </div>

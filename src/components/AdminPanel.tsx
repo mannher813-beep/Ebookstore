@@ -27,13 +27,13 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
   const fetchTransactions = async () => {
     setLoadingTx(true);
     try {
-      const token = localStorage.getItem("simulated_user")
-        ? JSON.parse(localStorage.getItem("simulated_user")!).role === "admin" ? "mock-token-admin" : "mock-token-user"
-        : "Bearer " + (await import("../supabaseClient")).supabase?.auth.getSession(); // simplified
+      const { supabase } = await import("../supabaseClient");
+      const session = supabase ? (await supabase.auth.getSession()).data.session : null;
+      const token = session ? `Bearer ${session.access_token}` : "";
 
       const res = await fetch("/api/transactions", {
         headers: {
-          "Authorization": token || "mock-token-admin"
+          "Authorization": token
         }
       });
       if (res.ok) {
@@ -97,16 +97,6 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
     }
   };
 
-  // Pre-fill fields for easy testing/demo
-  const handlePreFill = () => {
-    setTitre("Maîtriser Next.js 16 et Supabase v3");
-    setDescription("Un livre exhaustif pour de futures applications résilientes, avec paiements Stripe et webhooks de bout-en-bout.");
-    setPrix("6500");
-    setUrlCouverture("https://images.unsplash.com/photo-1618401471353-b98aedd07871?auto=format&fit=crop&q=80&w=400");
-    setUrlFichier("nextjs_supabase_book.pdf");
-    setCategorie("Programmation");
-  };
-
   return (
     <div className="space-y-10 font-sans" id="admin-panel">
       {/* Intro Section */}
@@ -136,12 +126,6 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
             <h3 className="font-display font-bold text-lg text-slate-900 flex items-center gap-2">
               <Plus className="h-5 w-5 text-indigo-600" /> Ajouter un Ebook
             </h3>
-            <button
-              onClick={handlePreFill}
-              className="text-xs text-indigo-600 bg-indigo-50 hover:bg-indigo-100 font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer border border-indigo-150"
-            >
-              Pré-remplir la Démo
-            </button>
           </div>
 
           {error && (
@@ -261,12 +245,8 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
             <div className="space-y-3.5 text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-slate-500 font-medium">Boutique Production</span>
-                <span className={`px-2 py-0.5 rounded-full font-bold font-mono text-[9px] ${
-                  configStatus.isRealProduction
-                    ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
-                    : "bg-indigo-50 text-indigo-700 border border-indigo-100"
-                }`}>
-                  {configStatus.isRealProduction ? "PRODUCTION" : "SIMULATEUR"}
+                <span className="px-2 py-0.5 rounded-full font-bold font-mono text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-100">
+                  PRODUCTION
                 </span>
               </div>
 
