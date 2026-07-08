@@ -127,21 +127,10 @@ export default function PurchaseList({
                       </button>
                     ) : isPending ? (
                       <div className="flex gap-2">
-                        {/* If in simulator, link to simulated gateway page directly */}
-                        {purchase.token_pay.startsWith("mf_tok_") && (
-                          <a
-                            href={`/simulateur-paiement?token=${purchase.token_pay}&price=${purchase.montant}&ebook=${encodeURIComponent(ebook.titre)}`}
-                            className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1 shadow-sm cursor-pointer"
-                          >
-                            <span>Payer</span>
-                            <ExternalLink className="h-3 w-3" />
-                          </a>
-                        )}
-
                         <button
                           onClick={() => handleRefresh(purchase.token_pay)}
                           disabled={refreshingToken === purchase.token_pay}
-                          className="flex-1 py-2 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-100 text-white disabled:text-slate-400 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                          className="w-full py-2 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-100 text-white disabled:text-slate-400 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
                         >
                           <RefreshCw className={`h-3.5 w-3.5 ${refreshingToken === purchase.token_pay ? "animate-spin" : ""}`} />
                           <span>{refreshingToken === purchase.token_pay ? "Sync..." : "Vérifier Statut"}</span>
