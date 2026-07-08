@@ -1,11 +1,12 @@
 import React from "react";
-import { BookOpen, User, Shield, LogOut, Terminal, BookMarked, Search, AlertTriangle } from "lucide-react";
+import { BookOpen, User, Shield, LogOut, Terminal, BookMarked, Search, AlertTriangle, Coins } from "lucide-react";
 
 interface HeaderProps {
   currentView: string;
   setView: (view: string) => void;
   user: any;
   role: string;
+  userAffiliate?: any;
   onLogout: () => void;
   onOpenAuth: () => void;
   searchTerm: string;
@@ -20,6 +21,7 @@ export default function Header({
   setView,
   user,
   role,
+  userAffiliate,
   onLogout,
   onOpenAuth,
   searchTerm,
@@ -91,6 +93,24 @@ export default function Header({
               >
                 <BookMarked className="h-4 w-4" />
                 <span className="hidden sm:inline">Mes Achats</span>
+              </button>
+
+              <button
+                onClick={() => setView("affiliate")}
+                className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  currentView === "affiliate"
+                    ? "bg-slate-900 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                }`}
+                id="nav-affiliate"
+              >
+                <Coins className="h-4 w-4 text-indigo-500" />
+                <span className="hidden sm:inline">
+                  {userAffiliate && userAffiliate.status === "approved" && userAffiliate.activated
+                    ? "Espace Affilié"
+                    : "Devenir Affilié"}
+                </span>
+                <span className="sm:hidden">Affilié</span>
               </button>
 
               {role === "admin" && (

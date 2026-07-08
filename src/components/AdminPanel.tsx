@@ -1,5 +1,29 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Trash2, Database, ShieldCheck, DollarSign, ListOrdered, Code, ArrowUpRight, HelpCircle, FileText, UploadCloud, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { 
+  Plus, 
+  Trash2, 
+  Database, 
+  ShieldCheck, 
+  DollarSign, 
+  ListOrdered, 
+  Code, 
+  ArrowUpRight, 
+  HelpCircle, 
+  FileText, 
+  UploadCloud, 
+  CheckCircle, 
+  AlertCircle, 
+  Loader2,
+  Users,
+  Check,
+  X,
+  Coins,
+  MessageSquare,
+  Send,
+  RefreshCw,
+  Phone,
+  ExternalLink
+} from "lucide-react";
 import { Ebook, Achat } from "../types";
 import { API_BASE_URL } from "../supabaseClient";
 
@@ -11,6 +35,10 @@ interface AdminPanelProps {
 }
 
 export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configStatus }: AdminPanelProps) {
+  // Tabs & Layout
+  const [activeTab, setActiveTab] = useState<"books" | "affiliates">("books");
+
+  // Core Ebook & Tx States
   const [titre, setTitre] = useState("");
   const [description, setDescription] = useState("");
   const [prix, setPrix] = useState("");
@@ -31,6 +59,153 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
 
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loadingTx, setLoadingTx] = useState(false);
+
+  // Affiliates Administration States
+  const [affiliates, setAffiliates] = useState<any[]>([]);
+  const [loadingAffiliates, setLoadingAffiliates] = useState(false);
+  const [selectedChatAffiliate, setSelectedChatAffiliate] = useState<any | null>(null);
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [adminReplyText, setAdminReplyText] = useState("");
+  const [sendingReply, setSendingReply] = useState(false);
+  const [motifRefusText, setMotifRefusText] = useState<{ [key: string]: string }>({});
+  const [showRefusInput, setShowRefusInput] = useState<{ [key: string]: boolean }>({});
+
+  const fetchAffiliatesData = async () => {
+    try {
+      const { supabase, hasSupabaseKeys } = await import("../supabaseClient");
+      if (!hasSupabaseKeys || !supabase) return;
+      setLoadingAffiliates(true);
+
+      const { data: affList, error: affErr } = await supabase
+        .from("affiliates")
+        .select("*")
+        .order("applied_at", { ascending: false });
+
+      if (affErr) throw affErr;
+
+      const { data: achatsData } = await supabase
+        .from("achats")
+        .select("id, affiliate_id, statut")
+        .eq("statut", "paid");
+
+      const { data: commissionsData } = await supabase
+        .from("affiliate_commissions")
+        .select("id, affiliate_id, montant");
+
+      const list = (affList || []).map((aff) => {
+        const salesCount = (achatsData || []).filter(ac => ac.affiliate_id === aff.id).length;
+        const commissionsSum = (commissionsData || [])
+          .filter(c => c.affiliate_id === aff.id)
+          .reduce((acc, curr) => acc + Number(curr.montant), 0);
+        const daughterCount = (affList || []).filter(a => a.parent_affiliate_id === aff.id).length;
+
+        return {
+          ...aff,
+          salesCount,
+          commissionsSum,
+          daughterCount
+        };
+      });
+
+      setAffiliates(list);
+    } catch (err) {
+      console.error("Error fetching admin affiliates:", err);
+    } finally {
+      setLoadingAffiliates(false);
+    }
+  };
+
+  const fetchChatMessages = async (affId: string) => {
+    try {
+      const { supabase } = await import("../supabaseClient");
+      if (!supabase) return;
+      const { data, error } = await supabase
+        .from("affiliate_messages")
+        .select("*")
+        .eq("affiliate_id", affId)
+        .order("created_at", { ascending: true });
+
+      if (!error && data) {
+        setChatMessages(data);
+      }
+    } catch (e) {
+      console.error("Error loading chat messages for admin:", e);
+    }
+  };
+
+  const handleSendAdminReply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedChatAffiliate || !adminReplyText.trim() || sendingReply) return;
+
+    setSendingReply(true);
+    try {
+      const { supabase } = await import("../supabaseClient");
+      if (!supabase) return;
+
+      const { error } = await supabase.from("affiliate_messages").insert({
+        affiliate_id: selectedChatAffiliate.id,
+        sender: "admin",
+        message: adminReplyText.trim()
+      });
+
+      if (!error) {
+        setAdminReplyText("");
+        fetchChatMessages(selectedChatAffiliate.id);
+      }
+    } catch (err) {
+      console.error("Error sending admin reply:", err);
+    } finally {
+      setSendingReply(false);
+    }
+  };
+
+  const handleAcceptAffiliate = async (id: string) => {
+    try {
+      const { supabase } = await import("../supabaseClient");
+      if (!supabase) return;
+
+      const { error } = await supabase
+        .from("affiliates")
+        .update({
+          status: "approved",
+          reviewed_at: new Date().toISOString()
+        })
+        .eq("id", id);
+
+      if (error) throw error;
+      await fetchAffiliatesData();
+    } catch (err) {
+      console.error("Error approving affiliate:", err);
+    }
+  };
+
+  const handleRejectAffiliate = async (id: string) => {
+    const motif = motifRefusText[id] || "";
+    try {
+      const { supabase } = await import("../supabaseClient");
+      if (!supabase) return;
+
+      const { error } = await supabase
+        .from("affiliates")
+        .update({
+          status: "rejected",
+          motif_rejet: motif.trim() || null,
+          reviewed_at: new Date().toISOString()
+        })
+        .eq("id", id);
+
+      if (error) throw error;
+      await fetchAffiliatesData();
+    } catch (err) {
+      console.error("Error rejecting affiliate:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "affiliates") {
+      fetchAffiliatesData();
+    }
+  }, [activeTab]);
 
   // Fetch transaction history
   const fetchTransactions = async () => {
@@ -283,8 +458,36 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
         </div>
       </div>
 
-      {/* Grid: Forms & Status */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      {/* Tabs Selector Bar */}
+      <div className="flex border-b border-slate-200 gap-1 overflow-x-auto shrink-0 pb-px">
+        <button
+          onClick={() => setActiveTab("books")}
+          className={`flex items-center gap-2 px-6 py-3.5 font-bold text-xs sm:text-sm border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === "books"
+              ? "border-indigo-600 text-indigo-600 bg-indigo-50/10"
+              : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+          }`}
+        >
+          <ListOrdered className="h-4 w-4 shrink-0" />
+          <span>Catalogue & Ventes</span>
+        </button>
+        <button
+          onClick={() => setActiveTab("affiliates")}
+          className={`flex items-center gap-2 px-6 py-3.5 font-bold text-xs sm:text-sm border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === "affiliates"
+              ? "border-indigo-600 text-indigo-600 bg-indigo-50/10"
+              : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+          }`}
+        >
+          <Users className="h-4 w-4 shrink-0" />
+          <span>Candidatures & Affiliations</span>
+        </button>
+      </div>
+
+      {activeTab === "books" ? (
+        <>
+          {/* Grid: Forms & Status */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Form Container */}
         <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
           <div className="flex items-center justify-between border-b border-slate-100 pb-4">
@@ -687,6 +890,291 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
           </div>
         )}
       </div>
+        </>
+      ) : (
+        /* AFFILIATES TAB CONTENT */
+        <div className="space-y-10">
+          
+          {/* Section 1: Pending Applications */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-6">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h3 className="font-display font-bold text-base text-slate-900 flex items-center gap-2">
+                <Clock className="h-5 w-5 text-amber-500" /> Candidatures Affiliés en Attente ({
+                  affiliates.filter(a => a.status === "pending").length
+                })
+              </h3>
+              <button
+                onClick={fetchAffiliatesData}
+                disabled={loadingAffiliates}
+                className="p-1 text-xs text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer flex items-center gap-1"
+              >
+                <RefreshCw className={`h-3 w-3 ${loadingAffiliates ? 'animate-spin' : ''}`} />
+                <span>Actualiser</span>
+              </button>
+            </div>
+
+            {loadingAffiliates ? (
+              <p className="text-xs text-slate-500 text-center py-6">Chargement des données d'affiliation...</p>
+            ) : affiliates.filter(a => a.status === "pending").length === 0 ? (
+              <p className="text-xs text-slate-500 text-center py-6 bg-slate-50 border border-slate-100 rounded-xl">Aucune candidature en attente d'approbation.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {affiliates.filter(a => a.status === "pending").map((cand) => (
+                  <div key={cand.id} className="p-4 border border-slate-200 bg-slate-50/50 rounded-2xl space-y-4">
+                    <div className="flex justify-between items-start gap-2">
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-900">{cand.nom_complet}</h4>
+                        <span className="text-[10px] text-slate-400 font-mono">Date : {new Date(cand.applied_at || "").toLocaleDateString()}</span>
+                      </div>
+                      <a
+                        href={`tel:${cand.telephone}`}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-[10px] font-bold rounded-lg font-mono transition-colors"
+                      >
+                        <Phone className="h-3 w-3 text-slate-500" />
+                        <span>{cand.telephone}</span>
+                      </a>
+                    </div>
+
+                    <div className="space-y-1.5 text-xs text-slate-600 leading-normal">
+                      <span className="block font-semibold uppercase font-mono text-[9px] text-slate-400">Moyen de promotion :</span>
+                      <p className="p-2.5 bg-white border border-slate-200 rounded-xl italic font-serif">
+                        "{cand.moyen_promotion}"
+                      </p>
+                    </div>
+
+                    {cand.lien_audience && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-mono font-semibold uppercase text-slate-400 shrink-0">Lien audience :</span>
+                        <a
+                          href={cand.lien_audience}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:underline font-mono truncate"
+                        >
+                          <span>{cand.lien_audience}</span>
+                          <ExternalLink className="h-2.5 w-2.5" />
+                        </a>
+                      </div>
+                    )}
+
+                    <div className="pt-2 border-t border-slate-100 flex flex-col gap-2">
+                      {showRefusInput[cand.id] ? (
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            placeholder="Motif de refus (optionnel, ex : Audience insuffisante)"
+                            value={motifRefusText[cand.id] || ""}
+                            onChange={(e) => setMotifRefusText({
+                              ...motifRefusText,
+                              [cand.id]: e.target.value
+                            })}
+                            className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-red-500 text-slate-850"
+                          />
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              onClick={() => {
+                                setShowRefusInput({ ...showRefusInput, [cand.id]: false });
+                              }}
+                              className="px-3 py-1 bg-slate-150 text-slate-700 font-semibold text-[10px] rounded-lg cursor-pointer"
+                            >
+                              Annuler
+                            </button>
+                            <button
+                              onClick={() => handleRejectAffiliate(cand.id)}
+                              className="px-3 py-1 bg-rose-600 text-white font-bold text-[10px] rounded-lg cursor-pointer flex items-center gap-1"
+                            >
+                              <X className="h-3 w-3" />
+                              <span>Valider le refus</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            onClick={() => {
+                              setShowRefusInput({ ...showRefusInput, [cand.id]: true });
+                            }}
+                            className="px-4 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-xl text-[11px] font-bold cursor-pointer flex items-center gap-1 transition-colors"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                            <span>Refuser</span>
+                          </button>
+                          <button
+                            onClick={() => handleAcceptAffiliate(cand.id)}
+                            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-bold cursor-pointer flex items-center gap-1 transition-colors shadow-sm"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            <span>Accepter l'affilié</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Active Affiliates & stats */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-4">
+            <h3 className="font-display font-bold text-base text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-4">
+              <Users className="h-5 w-5 text-indigo-600" /> Tous les Affiliés Actifs ({
+                affiliates.filter(a => a.status === "approved").length
+              })
+            </h3>
+
+            {affiliates.filter(a => a.status === "approved").length === 0 ? (
+              <p className="text-xs text-slate-500 text-center py-6">Aucun affilié actif approuvé pour l'instant.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-400 font-mono font-bold uppercase tracking-wider">
+                      <th className="py-3 px-4">Affilié / Contact</th>
+                      <th className="py-3 px-4">Code unique</th>
+                      <th className="py-3 px-4 text-center">Statut Compte</th>
+                      <th className="py-3 px-4 text-right">Ventes directes</th>
+                      <th className="py-3 px-4 text-right">Commissions</th>
+                      <th className="py-3 px-4 text-center">Filleuls (Réseau)</th>
+                      <th className="py-3 px-4 text-center">Messagerie</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {affiliates.filter(a => a.status === "approved").map((aff) => (
+                      <tr key={aff.id} className="hover:bg-slate-50/75 transition-colors">
+                        <td className="py-3 px-4">
+                          <span className="font-bold text-slate-900 block">{aff.nom_complet}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">{aff.telephone}</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="font-mono text-[11px] text-slate-700 bg-slate-50 px-2 py-0.5 border border-slate-200 rounded">{aff.referral_code}</span>
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          {aff.activated ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase tracking-wider">
+                              <span className="h-1.5 w-1.5 bg-emerald-500 rounded-full"></span> Activé
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-amber-50 text-amber-700 border border-amber-100 uppercase tracking-wider">
+                              <span className="h-1.5 w-1.5 bg-amber-500 rounded-full"></span> Non Activé
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right font-bold text-slate-900 font-mono">
+                          {aff.salesCount} ventes
+                        </td>
+                        <td className="py-3 px-4 text-right font-black text-emerald-600 font-mono">
+                          {aff.commissionsSum.toLocaleString()} FCFA
+                        </td>
+                        <td className="py-3 px-4 text-center font-bold text-slate-600 font-mono">
+                          {aff.daughterCount} parrainés
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <button
+                            onClick={() => {
+                              setSelectedChatAffiliate(aff);
+                              fetchChatMessages(aff.id);
+                            }}
+                            className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-200 rounded-xl cursor-pointer transition-all inline-flex items-center gap-1 text-[10px] font-bold"
+                          >
+                            <MessageSquare className="h-3.5 w-3.5" />
+                            <span>Contacter</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Section 3: Interactive Messenger Response Hub */}
+          {selectedChatAffiliate && (
+            <div className="bg-white rounded-2xl border border-indigo-200 shadow-md p-6 space-y-4 animate-in fade-in duration-300">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center font-bold text-sm">
+                    {selectedChatAffiliate.nom_complet.substring(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <h3 className="font-display font-bold text-sm text-slate-900 leading-none">
+                      Support avec : {selectedChatAffiliate.nom_complet}
+                    </h3>
+                    <p className="text-[10px] text-indigo-600 font-mono mt-0.5">Code unique : {selectedChatAffiliate.referral_code}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedChatAffiliate(null)}
+                  className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Chat messages viewport */}
+              <div className="max-h-[200px] overflow-y-auto space-y-3 py-2 pr-1">
+                {chatMessages.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-6">Aucun message historique. Envoyez la première communication ci-dessous.</p>
+                ) : (
+                  chatMessages.map((m) => {
+                    const isAdmin = m.sender === "admin";
+                    return (
+                      <div
+                        key={m.id}
+                        className={`flex ${isAdmin ? "justify-end" : "justify-start"} items-end gap-1.5`}
+                      >
+                        {!isAdmin && (
+                          <div className="h-6 w-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[10px] font-bold shrink-0 font-mono">
+                            {selectedChatAffiliate.nom_complet.substring(0, 1).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="max-w-[75%] space-y-0.5">
+                          <div className={`p-2.5 rounded-2xl text-xs leading-relaxed ${
+                            isAdmin
+                              ? "bg-indigo-600 text-white rounded-br-none"
+                              : "bg-slate-200 text-slate-800 rounded-bl-none"
+                          }`}>
+                            {m.message}
+                          </div>
+                          <span className="block text-[8px] text-slate-400 font-mono px-1">
+                            {new Date(m.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Chat Reply Form */}
+              <form onSubmit={handleSendAdminReply} className="border-t border-slate-100 pt-3 flex gap-2">
+                <input
+                  type="text"
+                  required
+                  placeholder={`Répondre à ${selectedChatAffiliate.nom_complet}...`}
+                  value={adminReplyText}
+                  onChange={(e) => setAdminReplyText(e.target.value)}
+                  className="flex-1 px-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-indigo-500 text-slate-850"
+                />
+                <button
+                  type="submit"
+                  disabled={sendingReply || !adminReplyText.trim()}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                >
+                  {sendingReply ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Send className="h-3.5 w-3.5" />
+                  )}
+                  <span>Répondre</span>
+                </button>
+              </form>
+            </div>
+          )}
+
+        </div>
+      )}
     </div>
   );
 }

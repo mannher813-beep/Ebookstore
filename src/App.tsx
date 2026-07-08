@@ -35,6 +35,10 @@ export default function App() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isAppInstalled, setIsAppInstalled] = useState(false);
 
+  // Affiliate States
+  const [userAffiliate, setUserAffiliate] = useState<any | null>(null);
+  const [loadingAffiliate, setLoadingAffiliate] = useState(false);
+
   // Catalogs & Transactions
   const [ebooks, setEbooks] = useState<Ebook[]>([]);
   const [purchases, setPurchases] = useState<Achat[]>([]);
@@ -338,6 +342,55 @@ export default function App() {
     }
   };
 
+  // 2b. Detect affiliate links and handle click tracking / parrain tracking
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const refCode = params.get("ref");
+    const parrainCode = params.get("parrain");
+
+    if (parrainCode) {
+      localStorage.setItem("ebookstore_parrain", parrainCode);
+      console.log("[Affiliate] Parrain code saved:", parrainCode);
+    }
+
+    if (refCode && hasSupabaseKeys && supabase) {
+      localStorage.setItem("ebookstore_ref", refCode);
+      
+      const registerClick = async () => {
+        try {
+          const { data: affiliateRow } = await supabase
+            .from("affiliates")
+            .select("id")
+            .eq("referral_code", refCode)
+            .maybeSingle();
+
+          if (affiliateRow) {
+            // Check if there is an ebook ID in the URL path
+            const match = window.location.pathname.match(/^\/ebook\/([a-zA-Z0-9-]+)/);
+            const ebookId = match ? match[1] : null;
+
+            // Log click
+            const { error: clickErr } = await supabase.from("affiliate_clicks").insert({
+              affiliate_id: affiliateRow.id,
+              ebook_id: ebookId,
+              converted: false,
+            });
+
+            if (clickErr) {
+              console.error("[Affiliate] Error inserting click:", clickErr);
+            } else {
+              console.log("[Affiliate] Click tracked successfully for:", refCode);
+            }
+          }
+        } catch (e) {
+          console.error("[Affiliate] Error in click tracking:", e);
+        }
+      };
+
+      registerClick();
+    }
+  }, []);
+
   // 3. Detect and handle URL query param ?payment=success from MoneyFusion return_url
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -461,10 +514,31 @@ export default function App() {
     }
   };
 
+  const fetchUserAffiliate = async (userId: string) => {
+    if (!hasSupabaseKeys || !supabase) return;
+    setLoadingAffiliate(true);
+    try {
+      const { data, error } = await supabase
+        .from("affiliates")
+        .select("*")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (!error) {
+        setUserAffiliate(data);
+      }
+    } catch (err) {
+      console.error("Error fetching user affiliate status:", err);
+    } finally {
+      setLoadingAffiliate(false);
+    }
+  };
+
   // Fetch real User Profile and Purchases via backend
   const fetchUserProfileAndData = async (userId: string, token: string, userEmail?: string) => {
     try {
       if (hasSupabaseKeys && supabase) {
+        fetchUserAffiliate(userId);
+
         const { data: profile, error: profileErr } = await supabase
           .from("profiles")
           .select("role")
@@ -602,6 +676,7 @@ export default function App() {
     setUser(null);
     setRole("user");
     setPurchases([]);
+    setUserAffiliate(null);
     setView("catalog");
   };
 
@@ -635,6 +710,24 @@ export default function App() {
         const orderId = "order_" + Math.random().toString(36).substr(2, 9);
         const tokenPay = "mf_tok_" + Math.random().toString(36).substr(2, 14);
 
+        // Check for affiliate referral code in localStorage
+        let affiliateIdToInsert: string | null = null;
+        const savedRefCode = localStorage.getItem("ebookstore_ref");
+        if (savedRefCode) {
+          try {
+            const { data: affiliateRow } = await supabase
+              .from("affiliates")
+              .select("id")
+              .eq("referral_code", savedRefCode)
+              .maybeSingle();
+            if (affiliateRow) {
+              affiliateIdToInsert = affiliateRow.id;
+            }
+          } catch (e) {
+            console.error("Error matching affiliate referral code:", e);
+          }
+        }
+
         // 2. Insert transaction directly into Supabase
         const { error: insertErr } = await supabase.from("achats").insert([
           {
@@ -643,6 +736,7 @@ export default function App() {
             token_pay: tokenPay,
             statut: "pending",
             montant: Number(checkoutEbook.prix),
+            affiliate_id: affiliateIdToInsert,
           }
         ]);
 
