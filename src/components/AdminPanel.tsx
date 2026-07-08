@@ -36,7 +36,19 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
   const fetchTransactions = async () => {
     setLoadingTx(true);
     try {
-      const { supabase } = await import("../supabaseClient");
+      const { supabase, hasSupabaseKeys } = await import("../supabaseClient");
+      if (hasSupabaseKeys && supabase) {
+        const { data, error } = await supabase
+          .from("achats")
+          .select("*, ebook:ebooks(titre)")
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+        setTransactions(data || []);
+        return;
+      }
+
+      // Fallback
       const session = supabase ? (await supabase.auth.getSession()).data.session : null;
       const token = session ? `Bearer ${session.access_token}` : "";
 

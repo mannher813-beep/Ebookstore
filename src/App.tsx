@@ -107,6 +107,68 @@ export default function App() {
 
   const handleVerifyPaymentOnReturn = async (token: string) => {
     try {
+      if (hasSupabaseKeys && supabase) {
+        // Query achats
+        const { data: purchase, error } = await supabase
+          .from("achats")
+          .select("*, ebook:ebooks(*)")
+          .eq("token_pay", token)
+          .maybeSingle();
+
+        if (error || !purchase) return;
+
+        let statusToSet = purchase.statut;
+
+        if (purchase.statut === "pending") {
+          try {
+            const checkRes = await fetch(`https://www.pay.moneyfusion.net/paiementNotif/${token}`);
+            const checkData = await checkRes.json();
+            if (checkData.statut && checkData.data) {
+              const externalStatus = checkData.data.statut; // pending, failure, no paid, paid
+              if (externalStatus === "paid") {
+                statusToSet = PaymentStatus.PAID;
+              } else if (externalStatus === "failure" || externalStatus === "no paid") {
+                statusToSet = PaymentStatus.FAILURE;
+              }
+
+              if (statusToSet !== purchase.statut) {
+                await supabase
+                  .from("achats")
+                  .update({ statut: statusToSet })
+                  .eq("token_pay", token);
+              }
+            }
+          } catch (e) {
+            console.error("Direct MoneyFusion poll failed:", e);
+          }
+        }
+
+        if (statusToSet === PaymentStatus.PAID) {
+          const ebookTitle = (purchase.ebook as any)?.titre || "Ebook";
+          setSuccessNotification({
+            show: true,
+            message: `🎉 Félicitations ! Votre paiement pour l'ebook "${ebookTitle}" a été validé avec succès. Votre téléchargement est disponible !`,
+          });
+        } else if (statusToSet === PaymentStatus.FAILURE) {
+          setSuccessNotification({
+            show: true,
+            message: "⚠️ Votre paiement a été annulé ou n'a pas pu être validé. Si vous pensez qu'il s'agit d'une erreur, veuillez contacter le support.",
+          });
+        } else {
+          setSuccessNotification({
+            show: true,
+            message: "⏳ Votre paiement est en cours de validation par MoneyFusion (Statut : En attente). Vos ebooks seront débloqués automatiquement d'ici quelques instants. Vous pouvez rafraîchir le statut manuellement si nécessaire.",
+          });
+        }
+
+        const session = (await supabase.auth.getSession()).data.session;
+        if (session?.user) {
+          fetchUserProfileAndData(session.user.id, session.access_token, session.user.email);
+        }
+        return;
+      }
+
+      // Fallback
       const res = await fetch(`${API_BASE_URL}/api/payments/status/${token}`);
       if (res.ok) {
         const updatedPurchase = await res.json();
@@ -177,13 +239,19 @@ export default function App() {
   const fetchConfigStatus = async () => {
     setLoadingConfig(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/config-status`);
-      if (res.ok) {
-        const data = await res.json();
-        setConfigStatus(data);
+      const missingKeys: string[] = [];
+      if (!hasSupabaseKeys) {
+        missingKeys.push("VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY");
       }
+      setConfigStatus({
+        isRealProduction: true,
+        supabaseUrl: (import.meta as any).env.VITE_SUPABASE_URL || "Non définie",
+        moneyfusionUrl: "https://pay.moneyfusion.net/Ebook_Store/22ec28c721674824/pay/",
+        supabaseServiceKey: "Configurée",
+        missingServerVars: missingKeys,
+      });
     } catch (err) {
-      console.error("Failed to fetch config status from backend:", err);
+      console.error("Failed to fetch config status:", err);
     } finally {
       setLoadingConfig(false);
     }
@@ -193,13 +261,22 @@ export default function App() {
     setLoadingEbooks(true);
     setDbError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/ebooks`);
-      if (res.ok) {
-        const data = await res.json();
-        setEbooks(data);
+      if (hasSupabaseKeys && supabase) {
+        const { data, error } = await supabase
+          .from("ebooks")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (error) throw error;
+        setEbooks(data || []);
       } else {
-        const errData = await res.json();
-        setDbError(errData.error || "Une erreur est survenue lors de la récupération des ebooks.");
+        const res = await fetch(`${API_BASE_URL}/api/ebooks`);
+        if (res.ok) {
+          const data = await res.json();
+          setEbooks(data);
+        } else {
+          const errData = await res.json();
+          setDbError(errData.error || "Une erreur est survenue lors de la récupération des ebooks.");
+        }
       }
     } catch (err: any) {
       console.error("Error loading ebooks:", err);
@@ -212,6 +289,31 @@ export default function App() {
   // Fetch real User Profile and Purchases via backend
   const fetchUserProfileAndData = async (userId: string, token: string, userEmail?: string) => {
     try {
+      if (hasSupabaseKeys && supabase) {
+        const { data: profile, error: profileErr } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", userId)
+          .single();
+
+        const emailToCheck = userEmail || "";
+        if (emailToCheck === "techsen237@gmail.com" || profile?.role === "admin") {
+          setRole("admin");
+        } else {
+          setRole("user");
+        }
+
+        const { data: purchasesData, error: purchasesErr } = await supabase
+          .from("achats")
+          .select("*, ebook:ebooks(*)")
+          .eq("user_id", userId);
+
+        if (purchasesData) {
+          setPurchases(purchasesData as any);
+        }
+        return;
+      }
+
       const res = await fetch(`${API_BASE_URL}/api/user-data`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -235,6 +337,19 @@ export default function App() {
   // Admin: Add Ebook
   const handleAddEbook = async (ebookData: Omit<Ebook, "id">): Promise<{ success: boolean; error?: string }> => {
     try {
+      if (hasSupabaseKeys && supabase) {
+        const { data, error } = await supabase
+          .from("ebooks")
+          .insert([ebookData])
+          .select();
+        if (error) {
+          console.error("Supabase insert error:", error);
+          return { success: false, error: error.message };
+        }
+        await fetchEbooks();
+        return { success: true };
+      }
+
       const session = supabase ? (await supabase.auth.getSession()).data.session : null;
       const token = session ? `Bearer ${session.access_token}` : "";
 
@@ -264,6 +379,19 @@ export default function App() {
   // Admin: Delete Ebook
   const handleDeleteEbook = async (id: string): Promise<boolean> => {
     try {
+      if (hasSupabaseKeys && supabase) {
+        const { error } = await supabase
+          .from("ebooks")
+          .delete()
+          .eq("id", id);
+        if (error) {
+          console.error("Supabase delete error:", error);
+          return false;
+        }
+        await fetchEbooks();
+        return true;
+      }
+
       const session = supabase ? (await supabase.auth.getSession()).data.session : null;
       const token = session ? `Bearer ${session.access_token}` : "";
 
@@ -318,13 +446,78 @@ export default function App() {
     setIsPurchasing(true);
     setPurchaseError(null);
 
-    let authToken = "";
-    if (supabase) {
-      const session = (await supabase.auth.getSession()).data.session;
-      authToken = session?.access_token || "";
-    }
-
     try {
+      if (hasSupabaseKeys && supabase) {
+        // 1. Generate local identifiers
+        const orderId = "order_" + Math.random().toString(36).substr(2, 9);
+        const tokenPay = "mf_tok_" + Math.random().toString(36).substr(2, 14);
+
+        // 2. Insert transaction directly into Supabase
+        const { error: insertErr } = await supabase.from("achats").insert([
+          {
+            user_id: user.id,
+            ebook_id: checkoutEbook.id,
+            token_pay: tokenPay,
+            statut: "pending",
+            montant: Number(checkoutEbook.prix),
+          }
+        ]);
+
+        if (insertErr) {
+          throw new Error("Impossible de créer la transaction dans la base de données : " + insertErr.message);
+        }
+
+        // 3. Build MoneyFusion payload as specified in documentation
+        const payload = {
+          totalPrice: Number(checkoutEbook.prix),
+          article: [{ [checkoutEbook.titre]: Number(checkoutEbook.prix) }],
+          personal_Info: [{ userId: user.id, orderId, ebookId: checkoutEbook.id }],
+          numeroSend: phoneInput,
+          nomclient: clientNameInput,
+          return_url: "https://ebookstore-73b.pages.dev/?payment=success",
+          webhook_url: "https://ebookstore-73b.pages.dev/api/webhook/moneyfusion", // mock webhook
+        };
+
+        // 4. Call MoneyFusion API directly
+        const moneyfusionUrl = "https://pay.moneyfusion.net/Ebook_Store/22ec28c721674824/pay/";
+        console.log("Calling MoneyFusion payment creation endpoint directly from client:", payload);
+        const response = await fetch(moneyfusionUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await response.json();
+        console.log("MoneyFusion Direct API Response:", data);
+
+        if (data.statut) {
+          const returnedToken = data.token || tokenPay;
+          if (returnedToken !== tokenPay) {
+            await supabase
+              .from("achats")
+              .update({ token_pay: returnedToken })
+              .eq("token_pay", tokenPay);
+          }
+
+          setCheckoutModalOpen(false);
+          setSelectedEbook(null);
+          localStorage.setItem("pending_payment_token", returnedToken);
+          window.location.href = data.url; // Redirect to MoneyFusion Checkout
+        } else {
+          setPurchaseError(data.message || "Échec de l'initialisation du paiement MoneyFusion.");
+        }
+        return;
+      }
+
+      // Fallback code
+      let authToken = "";
+      if (supabase) {
+        const session = (await supabase.auth.getSession()).data.session;
+        authToken = session?.access_token || "";
+      }
+
       const payload = {
         ebookId: checkoutEbook.id,
         userId: user.id,
@@ -333,7 +526,6 @@ export default function App() {
         userEmail: user.email,
       };
 
-      console.log("Requesting payment session creation...", payload);
       const res = await fetch(`${API_BASE_URL}/api/payments/create`, {
         method: "POST",
         headers: {
@@ -347,17 +539,16 @@ export default function App() {
 
       if (res.ok && data.statut) {
         setCheckoutModalOpen(false);
-        setSelectedEbook(null); // close detail modal if open
+        setSelectedEbook(null);
         if (data.token) {
           localStorage.setItem("pending_payment_token", data.token);
         }
-        // Redirect client to MoneyFusion secure production checkout page
         window.location.href = data.url;
       } else {
         setPurchaseError(data.error || "Une erreur s'est produite lors de l'initialisation du paiement MoneyFusion.");
       }
     } catch (err: any) {
-      setPurchaseError("Erreur réseau ou serveur : " + err.message);
+      setPurchaseError("Erreur réseau ou base de données : " + err.message);
     } finally {
       setIsPurchasing(false);
     }
@@ -366,14 +557,67 @@ export default function App() {
   // Secure Signed Downloader Trigger
   const handleDownloadEbook = async (ebookId: string) => {
     setDownloadingId(ebookId);
-    let authToken = "";
-
-    if (supabase) {
-      const session = (await supabase.auth.getSession()).data.session;
-      authToken = session?.access_token || "";
-    }
-
     try {
+      if (hasSupabaseKeys && supabase) {
+        const session = (await supabase.auth.getSession()).data.session;
+        if (!session?.user) {
+          alert("Veuillez vous connecter pour télécharger cet ebook.");
+          return;
+        }
+
+        // 1. Check purchase
+        const { data: purchase, error: purchaseErr } = await supabase
+          .from("achats")
+          .select("*")
+          .eq("user_id", session.user.id)
+          .eq("ebook_id", ebookId)
+          .eq("statut", "paid")
+          .maybeSingle();
+
+        if (purchaseErr || !purchase) {
+          alert("Vous n'avez pas acheté cet ebook ou le paiement est toujours en cours.");
+          return;
+        }
+
+        // 2. Get ebook storage path
+        const { data: ebook, error: ebookErr } = await supabase
+          .from("ebooks")
+          .select("url_fichier_storage")
+          .eq("id", ebookId)
+          .single();
+
+        if (ebookErr || !ebook || !ebook.url_fichier_storage) {
+          alert("Fichier d'ebook non trouvé sur notre serveur.");
+          return;
+        }
+
+        // 3. Generate signed URL directly from client
+        const { data: signedUrlData, error: storageErr } = await supabase.storage
+          .from("ebooks-fichiers")
+          .createSignedUrl(ebook.url_fichier_storage, 60);
+
+        if (storageErr || !signedUrlData) {
+          throw storageErr || new Error("Échec de la génération du lien sécurisé.");
+        }
+
+        const link = document.createElement("a");
+        link.href = signedUrlData.signedUrl;
+        link.download = ebook.url_fichier_storage;
+        link.target = "_blank";
+        link.referrerPolicy = "no-referrer";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        return;
+      }
+
+      // Fallback
+      let authToken = "";
+      if (supabase) {
+        const session = (await supabase.auth.getSession()).data.session;
+        authToken = session?.access_token || "";
+      }
+
       const res = await fetch(`${API_BASE_URL}/api/download/${ebookId}`, {
         headers: {
           Authorization: `Bearer ${authToken}`,
@@ -382,8 +626,6 @@ export default function App() {
 
       if (res.ok) {
         const data = await res.json();
-        console.log("Received signed download URL:", data);
-
         const link = document.createElement("a");
         link.href = data.url;
         link.download = data.filename || "ebook.pdf";
@@ -396,8 +638,8 @@ export default function App() {
         const errData = await res.json();
         alert(errData.error || "Impossible de télécharger le document.");
       }
-    } catch (err) {
-      alert("Erreur réseau lors de la génération de l'URL sécurisée.");
+    } catch (err: any) {
+      alert("Erreur lors de la génération de l'URL sécurisée : " + err.message);
     } finally {
       setDownloadingId(null);
     }
@@ -406,6 +648,60 @@ export default function App() {
   // Manual Check Status for Webhook Synchronization
   const handleRefreshPurchaseStatus = async (token: string) => {
     try {
+      if (hasSupabaseKeys && supabase) {
+        const { data: purchase, error } = await supabase
+          .from("achats")
+          .select("*, ebook:ebooks(*)")
+          .eq("token_pay", token)
+          .maybeSingle();
+
+        if (error || !purchase) {
+          alert("Impossible de trouver la transaction correspondante.");
+          return;
+        }
+
+        let statusToSet = purchase.statut;
+
+        if (purchase.statut === "pending") {
+          try {
+            const checkRes = await fetch(`https://www.pay.moneyfusion.net/paiementNotif/${token}`);
+            const checkData = await checkRes.json();
+            if (checkData.statut && checkData.data) {
+              const externalStatus = checkData.data.statut;
+              if (externalStatus === "paid") {
+                statusToSet = PaymentStatus.PAID;
+              } else if (externalStatus === "failure" || externalStatus === "no paid") {
+                statusToSet = PaymentStatus.FAILURE;
+              }
+
+              if (statusToSet !== purchase.statut) {
+                await supabase
+                  .from("achats")
+                  .update({ statut: statusToSet })
+                  .eq("token_pay", token);
+              }
+            }
+          } catch (e) {
+            console.error("Direct MoneyFusion status poll failed:", e);
+          }
+        }
+
+        const session = (await supabase.auth.getSession()).data.session;
+        if (session) {
+          fetchUserProfileAndData(user!.id, session.access_token);
+        }
+
+        if (statusToSet === PaymentStatus.PAID) {
+          alert(`🎉 Paiement validé avec succès pour l'ebook "${(purchase.ebook as any)?.titre || 'acheté'}" ! Votre fichier PDF est débloqué.`);
+        } else if (statusToSet === PaymentStatus.FAILURE) {
+          alert("❌ Le paiement semble avoir été annulé ou a échoué.");
+        } else {
+          alert("⏳ Le paiement est toujours en cours de validation chez MoneyFusion. Veuillez patienter un instant puis réessayer.");
+        }
+        return;
+      }
+
+      // Fallback
       const res = await fetch(`${API_BASE_URL}/api/payments/status/${token}`);
       if (res.ok) {
         const updatedPurchase = await res.json();
