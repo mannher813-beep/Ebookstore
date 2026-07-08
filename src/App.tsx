@@ -163,9 +163,15 @@ export default function App() {
   // Admin: Add Ebook
   const handleAddEbook = async (ebookData: Omit<Ebook, "id">): Promise<boolean> => {
     try {
+      const session = supabase ? (await supabase.auth.getSession()).data.session : null;
+      const token = session ? `Bearer ${session.access_token}` : "";
+
       const res = await fetch("/api/ebooks", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": token
+        },
         body: JSON.stringify(ebookData),
       });
       if (res.ok) {
@@ -182,8 +188,14 @@ export default function App() {
   // Admin: Delete Ebook
   const handleDeleteEbook = async (id: string): Promise<boolean> => {
     try {
+      const session = supabase ? (await supabase.auth.getSession()).data.session : null;
+      const token = session ? `Bearer ${session.access_token}` : "";
+
       const res = await fetch("/api/ebooks/" + id, {
         method: "DELETE",
+        headers: {
+          "Authorization": token
+        }
       });
       if (res.ok) {
         await fetchEbooks();
@@ -556,12 +568,32 @@ export default function App() {
 
         {/* ADMIN BACK-OFFICE VIEW */}
         {currentView === "admin" && (
-          <AdminPanel
-            ebooks={ebooks}
-            onAddEbook={handleAddEbook}
-            onDeleteEbook={handleDeleteEbook}
-            configStatus={configStatus}
-          />
+          role === "admin" ? (
+            <AdminPanel
+              ebooks={ebooks}
+              onAddEbook={handleAddEbook}
+              onDeleteEbook={handleDeleteEbook}
+              configStatus={configStatus}
+            />
+          ) : (
+            <div className="bg-white border border-slate-200 rounded-3xl p-8 max-w-lg mx-auto text-center space-y-6 shadow-sm my-12" id="access-denied-view">
+              <div className="h-14 w-14 bg-rose-50 text-rose-650 rounded-2xl flex items-center justify-center mx-auto border border-rose-100">
+                <Shield className="h-8 w-8 text-rose-600" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="font-display font-black text-xl text-slate-900 tracking-tight">Accès Refusé</h3>
+                <p className="text-sm text-slate-500 leading-relaxed">
+                  Cette section d'administration est strictement réservée au gérant de la boutique. Veuillez vous connecter avec votre compte administrateur habilité.
+                </p>
+              </div>
+              <button
+                onClick={() => setView("catalog")}
+                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all cursor-pointer shadow-sm"
+              >
+                Retourner au Catalogue
+              </button>
+            </div>
+          )
         )}
       </main>
 

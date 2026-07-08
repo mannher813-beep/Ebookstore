@@ -255,7 +255,13 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
                   <span className="text-slate-500 font-medium font-sans">Endpoint Supabase</span>
                   <span className="text-slate-400 font-mono text-[10px]">SUPABASE_URL</span>
                 </div>
-                <span className="block p-1.5 bg-slate-50 rounded-lg text-[10px] font-mono border border-slate-200 text-slate-600 truncate max-w-full">
+                <span className={`block p-2 rounded-lg text-[10px] font-mono border truncate max-w-full ${
+                  configStatus.supabaseUrl.includes("Erreur")
+                    ? "bg-rose-50 border-rose-150 text-rose-850"
+                    : configStatus.supabaseUrl.includes("Chargement")
+                    ? "bg-slate-50 border-slate-100 text-slate-500"
+                    : "bg-emerald-50 border-emerald-100 text-emerald-800 font-medium"
+                }`}>
                   {configStatus.supabaseUrl}
                 </span>
               </div>
@@ -265,10 +271,12 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
                   <span className="text-slate-500 font-medium font-sans">Service Role Access</span>
                   <span className="text-slate-400 font-mono text-[10px]">SUPABASE_SERVICE_KEY</span>
                 </div>
-                <span className={`block p-1.5 rounded-lg text-[10px] font-mono border text-center ${
-                  configStatus.supabaseServiceKey.includes("Configuré")
-                    ? "bg-emerald-50 border-emerald-100 text-emerald-800 font-bold"
-                    : "bg-rose-50 border-rose-100 text-rose-800"
+                <span className={`block p-2 rounded-lg text-[10px] font-mono border text-center ${
+                  configStatus.supabaseServiceKey.includes("Erreur")
+                    ? "bg-rose-50 border-rose-150 text-rose-850 font-bold"
+                    : configStatus.supabaseServiceKey.includes("Chargement")
+                    ? "bg-slate-50 border-slate-100 text-slate-500"
+                    : "bg-emerald-50 border-emerald-100 text-emerald-800 font-bold"
                 }`}>
                   {configStatus.supabaseServiceKey}
                 </span>
@@ -279,7 +287,13 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
                   <span className="text-slate-500 font-medium font-sans">MoneyFusion Payment API</span>
                   <span className="text-slate-400 font-mono text-[10px]">MONEYFUSION_URL</span>
                 </div>
-                <span className="block p-1.5 bg-slate-50 rounded-lg text-[10px] font-mono border border-slate-200 text-slate-600 truncate max-w-full">
+                <span className={`block p-2 rounded-lg text-[10px] font-mono border truncate max-w-full ${
+                  configStatus.moneyfusionUrl.includes("Erreur")
+                    ? "bg-rose-50 border-rose-150 text-rose-850"
+                    : configStatus.moneyfusionUrl.includes("Chargement")
+                    ? "bg-slate-50 border-slate-100 text-slate-500"
+                    : "bg-emerald-50 border-emerald-100 text-emerald-800 font-medium"
+                }`}>
                   {configStatus.moneyfusionUrl}
                 </span>
               </div>

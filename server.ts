@@ -50,26 +50,119 @@ function isProductionMode() {
   }
 }
 
+// Middleware to verify if the requesting user has the 'admin' role
+async function verifyAdmin(req: any, res: any, next: any) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: "Accès non autorisé : Token manquant." });
+  }
+  const token = authHeader.replace("Bearer ", "");
+  try {
+    const client = getSupabase();
+    const { data: { user }, error: userErr } = await client.auth.getUser(token);
+    if (userErr || !user) {
+      return res.status(401).json({ error: "Session d'administration invalide ou expirée." });
+    }
+
+    if (user.email === "techsen237@gmail.com") {
+      return next(); // Always allow the super-admin email
+    }
+
+    const { data: profile, error: profileErr } = await client
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profileErr) {
+      return res.status(500).json({ error: "Erreur lors de la vérification du profil d'administration." });
+    }
+
+    if (profile?.role === "admin") {
+      return next();
+    }
+
+    return res.status(403).json({ error: "Accès refusé. Droits d'administrateur requis." });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+}
+
 // ==========================================
 // API ENDPOINTS
 // ==========================================
 
 // Check configuration status & diagnose missing environment variables
-app.get("/api/config-status", (req, res) => {
+app.get("/api/config-status", async (req, res) => {
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ? "Configuré" : "";
   const moneyfusionUrl = process.env.MONEYFUSION_API_URL || "";
 
+  let supabaseUrlStatus = "Non configuré";
+  let supabaseServiceKeyStatus = "Non configuré";
+  let moneyfusionStatus = "Non configuré";
+
   const missingServerVars: string[] = [];
-  if (!supabaseUrl) missingServerVars.push("VITE_SUPABASE_URL / SUPABASE_URL");
+  if (!supabaseUrl) missingServerVars.push("VITE_SUPABASE_URL");
   if (!supabaseServiceKey) missingServerVars.push("SUPABASE_SERVICE_ROLE_KEY");
   if (!moneyfusionUrl) missingServerVars.push("MONEYFUSION_API_URL");
 
+  // 1. Live Check Supabase and Key connection
+  if (supabaseUrl && supabaseServiceKey) {
+    try {
+      const client = getSupabase();
+      // Probe by selecting 1 row from ebooks (safely proves endpoint & service role bypass are working)
+      const { data, error } = await client
+        .from("ebooks")
+        .select("id")
+        .limit(1);
+
+      if (error) {
+        supabaseUrlStatus = `Erreur : ${error.message}`;
+        supabaseServiceKeyStatus = `Erreur : ${error.message}`;
+      } else {
+        supabaseUrlStatus = `${supabaseUrl} (Connecté)`;
+        supabaseServiceKeyStatus = "Connecté (Service Role Actif)";
+      }
+    } catch (err: any) {
+      supabaseUrlStatus = `Erreur de connexion : ${err.message || err}`;
+      supabaseServiceKeyStatus = `Erreur : ${err.message || err}`;
+    }
+  } else {
+    if (!supabaseUrl) supabaseUrlStatus = "Erreur : URL manquante";
+    if (!supabaseServiceKey) supabaseServiceKeyStatus = "Erreur : Clé de service manquante";
+  }
+
+  // 2. Live Check MoneyFusion endpoint
+  if (moneyfusionUrl) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      
+      const probeRes = await fetch(moneyfusionUrl, {
+        method: "GET",
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      // Any HTTP response means the host resolved and responded
+      moneyfusionStatus = `${moneyfusionUrl} (Connecté)`;
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        moneyfusionStatus = `${moneyfusionUrl} (Erreur : Délai d'attente de connexion dépassé)`;
+      } else {
+        moneyfusionStatus = `${moneyfusionUrl} (Erreur de connexion)`;
+      }
+    }
+  } else {
+    moneyfusionStatus = "Erreur : URL MoneyFusion manquante";
+  }
+
   res.json({
-    supabaseUrl: supabaseUrl || "Non configuré",
-    supabaseServiceKey: supabaseServiceKey ? "Configuré (Masqué)" : "Non configuré",
-    moneyfusionUrl: moneyfusionUrl || "Non configuré",
-    isRealProduction: isProductionMode() && missingServerVars.length === 0,
+    supabaseUrl: supabaseUrlStatus,
+    supabaseServiceKey: supabaseServiceKeyStatus,
+    moneyfusionUrl: moneyfusionStatus,
+    isRealProduction: missingServerVars.length === 0 && !supabaseServiceKeyStatus.includes("Erreur"),
     missingServerVars,
   });
 });
@@ -92,7 +185,7 @@ app.get("/api/ebooks", async (req, res) => {
 });
 
 // Add ebook (Admin role)
-app.post("/api/ebooks", async (req, res) => {
+app.post("/api/ebooks", verifyAdmin, async (req, res) => {
   const { titre, description, prix, url_couverture, url_fichier_storage, categorie } = req.body;
 
   if (!titre || !description || !prix || !url_couverture || !url_fichier_storage || !categorie) {
@@ -115,7 +208,7 @@ app.post("/api/ebooks", async (req, res) => {
 });
 
 // Delete ebook (Admin role)
-app.delete("/api/ebooks/:id", async (req, res) => {
+app.delete("/api/ebooks/:id", verifyAdmin, async (req, res) => {
   const { id } = req.params;
   try {
     const client = getSupabase();
@@ -181,7 +274,7 @@ app.get("/api/user-data", async (req, res) => {
 });
 
 // Fetch transaction history (Admin only)
-app.get("/api/transactions", async (req, res) => {
+app.get("/api/transactions", verifyAdmin, async (req, res) => {
   try {
     const client = getSupabase();
     const { data, error } = await client
