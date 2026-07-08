@@ -1,0 +1,620 @@
+import React, { useState, useEffect } from "react";
+import { CreditCard, Phone, CheckCircle, Shield, Sparkles, ShoppingBag, X, AlertCircle } from "lucide-react";
+import Header from "./components/Header";
+import EbookCard from "./components/EbookCard";
+import BookDetailModal from "./components/BookDetailModal";
+import AuthModal from "./components/AuthModal";
+import AdminPanel from "./components/AdminPanel";
+import PurchaseList from "./components/PurchaseList";
+import PaymentSimulator from "./components/PaymentSimulator";
+import { Ebook, Achat, PaymentStatus } from "./types";
+import { getSimulatedUser, setSimulatedUser, hasSupabaseKeys, supabase } from "./supabaseClient";
+
+export default function App() {
+  // Navigation & Views
+  const [currentView, setView] = useState<string>("catalog"); // catalog, my-purchases, admin, payment-simulator
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [selectedEbook, setSelectedEbook] = useState<Ebook | null>(null);
+
+  // Users & Auth States
+  const [user, setUser] = useState<{ id: string; email: string } | null>(null);
+  const [role, setRole] = useState<string>("user"); // user | admin
+
+  // Catalogs & Transactions
+  const [ebooks, setEbooks] = useState<Ebook[]>([]);
+  const [purchases, setPurchases] = useState<Achat[]>([]);
+  const [loadingEbooks, setLoadingEbooks] = useState(true);
+
+  // Search & Filtering
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("all");
+
+  // Payment checkout form state
+  const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
+  const [checkoutEbook, setCheckoutEbook] = useState<Ebook | null>(null);
+  const [phoneInput, setPhoneInput] = useState("");
+  const [clientNameInput, setClientNameInput] = useState("");
+  const [isPurchasing, setIsPurchasing] = useState(false);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
+
+  // Downloading State
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  // Simulator State Parameters
+  const [simulatorParams, setSimulatorParams] = useState<{
+    token: string;
+    price: number;
+    ebookTitle: string;
+    clientName: string;
+  } | null>(null);
+
+  // Config Status Overview
+  const [configStatus, setConfigStatus] = useState({
+    isRealProduction: false,
+    supabaseUrl: "Chargement...",
+    moneyfusionUrl: "Chargement...",
+    supabaseServiceKey: "Chargement...",
+  });
+
+  // 1. Load Initial Configuration Status & Ebooks
+  useEffect(() => {
+    fetchConfigStatus();
+    fetchEbooks();
+  }, []);
+
+  // 2. Auth State Sync (Real vs Simulated)
+  useEffect(() => {
+    if (hasSupabaseKeys && supabase) {
+      // Sync real Supabase Auth
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user) {
+          setUser({ id: session.user.id, email: session.user.email! });
+          fetchUserProfileAndData(session.user.id, session.access_token);
+        } else {
+          setUser(null);
+          setRole("user");
+        }
+      });
+
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (session?.user) {
+          setUser({ id: session.user.id, email: session.user.email! });
+          fetchUserProfileAndData(session.user.id, session.access_token);
+        } else {
+          setUser(null);
+          setRole("user");
+          setPurchases([]);
+        }
+      });
+
+      return () => subscription.unsubscribe();
+    } else {
+      // Sync Simulated Auth
+      const sim = getSimulatedUser();
+      if (sim) {
+        setUser({ id: sim.id, email: sim.email });
+        setRole(sim.role);
+        fetchUserDataSimulated();
+      }
+    }
+  }, [currentView]);
+
+  const fetchConfigStatus = async () => {
+    try {
+      const res = await fetch("/api/config-status");
+      if (res.ok) {
+        const data = await res.json();
+        setConfigStatus(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch config status:", err);
+    }
+  };
+
+  const fetchEbooks = async () => {
+    setLoadingEbooks(true);
+    try {
+      const res = await fetch("/api/ebooks");
+      if (res.ok) {
+        const data = await res.json();
+        setEbooks(data);
+      }
+    } catch (err) {
+      console.error("Error loading ebooks:", err);
+    } finally {
+      setLoadingEbooks(false);
+    }
+  };
+
+  // Fetch real User Profile and Purchases via backend
+  const fetchUserProfileAndData = async (userId: string, token: string) => {
+    try {
+      const res = await fetch("/api/user-data", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRole(data.role);
+        setPurchases(data.purchases);
+      }
+    } catch (err) {
+      console.error("Error fetching user info:", err);
+    }
+  };
+
+  // Fetch simulated purchases
+  const fetchUserDataSimulated = async () => {
+    try {
+      const res = await fetch("/api/user-data", {
+        headers: {
+          Authorization: "Bearer mock-token-" + (getSimulatedUser()?.role || "user"),
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPurchases(data.purchases);
+      }
+    } catch (err) {
+      console.error("Error fetching simulated user data:", err);
+    }
+  };
+
+  // 3. Admin: Add Ebook
+  const handleAddEbook = async (ebookData: Omit<Ebook, "id">): Promise<boolean> => {
+    try {
+      const res = await fetch("/api/ebooks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ebookData),
+      });
+      if (res.ok) {
+        await fetchEbooks();
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error("Failed to add ebook:", err);
+      return false;
+    }
+  };
+
+  // 4. Admin: Delete Ebook
+  const handleDeleteEbook = async (id: string): Promise<boolean> => {
+    try {
+      const res = await fetch("/api/ebooks/" + id, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        await fetchEbooks();
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error("Failed to delete ebook:", err);
+      return false;
+    }
+  };
+
+  // 5. Auth Success Handler
+  const handleLoginSuccess = (userData: { id: string; email: string }, userRole: string) => {
+    setUser(userData);
+    setRole(userRole);
+    if (!hasSupabaseKeys) {
+      setSimulatedUser({ id: userData.id, email: userData.email, role: userRole as any });
+      fetchUserDataSimulated();
+    }
+    setAuthModalOpen(false);
+  };
+
+  // 6. Logout Handler
+  const handleLogout = async () => {
+    if (hasSupabaseKeys && supabase) {
+      await supabase.auth.signOut();
+    } else {
+      setSimulatedUser(null);
+    }
+    setUser(null);
+    setRole("user");
+    setPurchases([]);
+    setView("catalog");
+  };
+
+  // 7. Initiate MoneyFusion Payment Flow
+  const handleOpenCheckout = (ebook: Ebook) => {
+    setCheckoutEbook(ebook);
+    setPhoneInput("");
+    setClientNameInput(user?.email.split("@")[0] || "John Doe");
+    setPurchaseError(null);
+    setCheckoutModalOpen(true);
+  };
+
+  const handleCreatePayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!checkoutEbook || !user) return;
+
+    setIsPurchasing(true);
+    setPurchaseError(null);
+
+    // Get Auth token
+    let authToken = "mock-token-" + role;
+    if (hasSupabaseKeys && supabase) {
+      const session = (await supabase.auth.getSession()).data.session;
+      authToken = session?.access_token || "";
+    }
+
+    try {
+      const payload = {
+        ebookId: checkoutEbook.id,
+        userId: user.id,
+        numeroSend: phoneInput,
+        nomclient: clientNameInput,
+        userEmail: user.email,
+      };
+
+      console.log("Requesting payment session creation...", payload);
+      const res = await fetch("/api/payments/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.statut) {
+        setCheckoutModalOpen(false);
+        setSelectedEbook(null); // close detail modal if open
+
+        // If returned URL contains our payment simulator path, capture parameters internally
+        if (data.url.includes("/simulateur-paiement")) {
+          const urlObj = new URL(data.url, window.location.origin);
+          setSimulatorParams({
+            token: urlObj.searchParams.get("token") || "",
+            price: Number(urlObj.searchParams.get("price") || 0),
+            ebookTitle: urlObj.searchParams.get("ebook") || "",
+            clientName: urlObj.searchParams.get("client") || "",
+          });
+          setView("payment-simulator");
+        } else {
+          // REAL PRODUCTION REDIRECT TO MONEYFUSION SECURE CHECKOUT PAGE
+          window.location.href = data.url;
+        }
+      } else {
+        setPurchaseError(data.error || "Une erreur s'est produite lors du contact avec MoneyFusion.");
+      }
+    } catch (err: any) {
+      setPurchaseError("Erreur réseau ou serveur : " + err.message);
+    } finally {
+      setIsPurchasing(false);
+    }
+  };
+
+  // 8. Secure Signed Downloader Trigger
+  const handleDownloadEbook = async (ebookId: string) => {
+    setDownloadingId(ebookId);
+    let authToken = "mock-token-" + role;
+
+    if (hasSupabaseKeys && supabase) {
+      const session = (await supabase.auth.getSession()).data.session;
+      authToken = session?.access_token || "";
+    }
+
+    try {
+      const res = await fetch(`/api/download/${ebookId}`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        console.log("Received signed download URL:", data);
+
+        // Instantly trigger virtual download link anchor
+        const link = document.createElement("a");
+        link.href = data.url;
+        link.download = data.filename || "ebook.pdf";
+        link.target = "_blank";
+        link.referrerPolicy = "no-referrer";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        const errData = await res.json();
+        alert(errData.error || "Impossible de télécharger le document.");
+      }
+    } catch (err) {
+      alert("Erreur réseau lors de la génération de l'URL sécurisée.");
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  // 9. Manual Check Status for Webhook Synchronization
+  const handleRefreshPurchaseStatus = async (token: string) => {
+    try {
+      const res = await fetch(`/api/payments/status/${token}`);
+      if (res.ok) {
+        const updatedPurchase = await res.json();
+
+        // Refresh list
+        if (hasSupabaseKeys && supabase) {
+          const session = (await supabase.auth.getSession()).data.session;
+          if (session) fetchUserProfileAndData(user!.id, session.access_token);
+        } else {
+          await fetchUserDataSimulated();
+        }
+
+        if (updatedPurchase.statut === PaymentStatus.PAID) {
+          alert(`🎉 Paiement validé avec succès pour l'ebook "${updatedPurchase.ebook?.titre}" ! Votre fichier PDF est débloqué.`);
+        } else if (updatedPurchase.statut === PaymentStatus.FAILURE) {
+          alert("❌ Le paiement semble avoir été annulé ou a échoué.");
+        } else {
+          alert("⏳ Le paiement est toujours en cours de validation chez MoneyFusion. Veuillez patienter un instant puis réessayer.");
+        }
+      }
+    } catch (err) {
+      console.error("Error checking status:", err);
+    }
+  };
+
+  // Categories list
+  const categories = ["all", ...new Set(ebooks.map((eb) => eb.categorie))].filter((cat) => cat !== "all") as string[];
+
+  // Filtering catalogue
+  const filteredEbooks = ebooks.filter((eb) => {
+    const matchesSearch =
+      eb.titre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      eb.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      eb.categorie.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesCategory = selectedCategory === "all" || eb.categorie === selectedCategory;
+
+    return matchesSearch && matchesCategory;
+  });
+
+  return (
+    <div className="min-h-screen bg-slate-50/50 flex flex-col justify-between" id="app-root">
+      {/* Navigation Header */}
+      <Header
+        currentView={currentView}
+        setView={setView}
+        user={user}
+        role={role}
+        onLogout={handleLogout}
+        onOpenAuth={() => setAuthModalOpen(true)}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        selectedCategory={selectedCategory}
+        setSelectedCategory={setSelectedCategory}
+        categories={categories}
+        configStatus={configStatus}
+      />
+
+      {/* Main Container */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex-1 w-full">
+        {/* CATALOG VIEW */}
+        {currentView === "catalog" && (
+          <div className="space-y-8" id="catalog-view">
+            {/* Hero / Banner section */}
+            <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-3xl p-6 sm:p-10 shadow-xl border border-indigo-950/30 relative overflow-hidden flex flex-col sm:flex-row justify-between items-center gap-6">
+              <div className="space-y-4 max-w-xl text-center sm:text-left relative z-10">
+                <span className="bg-indigo-500/10 backdrop-blur-md text-indigo-300 text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full border border-indigo-500/20 font-mono">
+                  🚀 NOURRISSEZ VOTRE INTELLIGENCE
+                </span>
+                <h2 className="font-display font-black text-3xl sm:text-4xl lg:text-5xl tracking-tight leading-none">
+                  Les Meilleurs Ebooks de Développement en Afrique
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-md">
+                  Téléchargement de PDF haute-qualité sécurisé et automatisé. Payez instantanément par <strong>Orange Money, MTN MoMo, Moov ou Wave</strong>.
+                </p>
+              </div>
+
+              {/* Vector Icon graphic on the right */}
+              <div className="shrink-0 p-4 bg-indigo-500/10 backdrop-blur-md border border-indigo-500/20 rounded-2xl hidden lg:block rotate-3 hover:rotate-0 transition-transform duration-300">
+                <ShoppingBag className="h-16 w-16 text-indigo-400" />
+              </div>
+            </div>
+
+            {/* Catalog Grid */}
+            <div className="space-y-6">
+              <div className="flex items-center justify-between border-b border-slate-150 pb-3">
+                <h3 className="font-display font-bold text-lg text-slate-900 tracking-tight">
+                  Toutes nos oeuvres disponibles ({filteredEbooks.length})
+                </h3>
+              </div>
+
+              {loadingEbooks ? (
+                <div className="flex flex-col items-center justify-center py-24 space-y-3">
+                  <div className="h-8 w-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-xs text-slate-500 font-mono">Interrogation de la base de données...</span>
+                </div>
+              ) : filteredEbooks.length === 0 ? (
+                <div className="text-center py-16 bg-white border border-slate-200 rounded-2xl">
+                  <p className="text-sm text-slate-500">Aucun ebook ne correspond à votre recherche ou catégorie.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+                  {filteredEbooks.map((ebook) => {
+                    const hasPurchased = purchases.some(
+                      (p) => p.ebook_id === ebook.id && p.statut === PaymentStatus.PAID
+                    );
+                    return (
+                      <EbookCard
+                        key={ebook.id}
+                        ebook={ebook}
+                        onSelect={setSelectedEbook}
+                        onBuy={handleOpenCheckout}
+                        hasPurchased={hasPurchased}
+                        isPurchasing={isPurchasing}
+                        user={user}
+                        onOpenAuth={() => setAuthModalOpen(true)}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* MY PURCHASES VIEW */}
+        {currentView === "my-purchases" && (
+          <PurchaseList
+            purchases={purchases}
+            onDownload={handleDownloadEbook}
+            downloadingId={downloadingId}
+            onRefreshStatus={handleRefreshPurchaseStatus}
+            setView={setView}
+          />
+        )}
+
+        {/* ADMIN BACK-OFFICE VIEW */}
+        {currentView === "admin" && (
+          <AdminPanel
+            ebooks={ebooks}
+            onAddEbook={handleAddEbook}
+            onDeleteEbook={handleDeleteEbook}
+            configStatus={configStatus}
+          />
+        )}
+
+        {/* PAYMENT SIMULATOR SCREEN */}
+        {currentView === "payment-simulator" && simulatorParams && (
+          <PaymentSimulator
+            token={simulatorParams.token}
+            price={simulatorParams.price}
+            ebookTitle={simulatorParams.ebookTitle}
+            clientName={simulatorParams.clientName}
+            onPaymentProcessed={() => {
+              setSimulatorParams(null);
+              setView("my-purchases");
+            }}
+          />
+        )}
+      </main>
+
+      {/* FOOTER */}
+      <footer className="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-400 font-mono tracking-wide mt-12 shrink-0">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <span>&copy; 2026 EbookStore Africa. Tous droits réservés.</span>
+          <div className="flex gap-4">
+            <span className="flex items-center gap-1"><Shield className="h-3.5 w-3.5 text-indigo-600" /> Sécurisé par Supabase & Cloudflare</span>
+          </div>
+        </div>
+      </footer>
+
+      {/* --- MODALS --- */}
+
+      {/* 1. Auth Login/Register Modal */}
+      {authModalOpen && (
+        <AuthModal
+          onClose={() => setAuthModalOpen(false)}
+          onLoginSuccess={handleLoginSuccess}
+        />
+      )}
+
+      {/* 2. Book Detailed Preview Modal */}
+      {selectedEbook && (
+        <BookDetailModal
+          ebook={selectedEbook}
+          onClose={() => setSelectedEbook(null)}
+          onBuy={handleOpenCheckout}
+          hasPurchased={purchases.some(
+            (p) => p.ebook_id === selectedEbook.id && p.statut === PaymentStatus.PAID
+          )}
+          isPurchasing={isPurchasing}
+          user={user}
+          onOpenAuth={() => setAuthModalOpen(true)}
+          onDownload={handleDownloadEbook}
+          downloadingId={downloadingId}
+        />
+      )}
+
+      {/* 3. Checkout Information Input Modal */}
+      {checkoutModalOpen && checkoutEbook && (
+        <div className="fixed inset-0 z-50 overflow-y-auto font-sans" id="checkout-input-modal">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setCheckoutModalOpen(false)}></div>
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative transform overflow-hidden rounded-2xl bg-white p-6 sm:p-8 text-left shadow-2xl transition-all w-full max-w-sm border border-slate-200 space-y-6 animate-in fade-in zoom-in-95 duration-200">
+              
+              <button
+                onClick={() => setCheckoutModalOpen(false)}
+                className="absolute right-4 top-4 p-1 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-900 transition-all cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              <div className="text-center space-y-1">
+                <h3 className="font-display font-black text-lg text-slate-900">Coordonnées Mobile Money</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Saisissez les informations de facturation pour lancer la demande de paiement MoneyFusion.
+                </p>
+              </div>
+
+              {purchaseError && (
+                <div className="bg-rose-50 text-rose-700 text-xs p-3 rounded-xl border border-rose-100 font-mono">
+                  {purchaseError}
+                </div>
+              )}
+
+              <form onSubmit={handleCreatePayment} className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono mb-1">
+                    Nom Complet du Client
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={clientNameInput}
+                    onChange={(e) => setClientNameInput(e.target.value)}
+                    placeholder="Ex: John Doe"
+                    className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono mb-1">
+                    Numéro de Téléphone Payeur *
+                  </label>
+                  <div className="relative flex items-center">
+                    <Phone className="absolute left-3.5 h-4 w-4 text-slate-400" />
+                    <input
+                      type="tel"
+                      required
+                      value={phoneInput}
+                      onChange={(e) => setPhoneInput(e.target.value)}
+                      placeholder="Ex: 07070707"
+                      className="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-mono"
+                    />
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1 block">
+                    Numéro utilisé pour débiter votre mobile money (Orange, MTN, Wave).
+                  </span>
+                </div>
+
+                <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-xs text-slate-600 flex justify-between items-center">
+                  <span>Montant de la transaction :</span>
+                  <strong className="font-bold text-slate-900">{checkoutEbook.prix.toLocaleString()} FCFA</strong>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isPurchasing}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-slate-100 disabled:text-slate-400 font-bold text-xs sm:text-sm rounded-xl transition-all cursor-pointer shadow hover:shadow-md flex items-center justify-center gap-1.5"
+                >
+                  <CreditCard className="h-4.5 w-4.5" />
+                  <span>{isPurchasing ? "Lancement en cours..." : "Lancer le paiement"}</span>
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

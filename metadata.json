@@ -1,0 +1,6 @@
+{
+  "name": "Ebook Store",
+  "description": "A complete, production-ready ebook store featuring automated mobile money payments via MoneyFusion, user accounts, and secure ebook downloads.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
