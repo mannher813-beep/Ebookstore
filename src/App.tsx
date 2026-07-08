@@ -33,6 +33,7 @@ export default function App() {
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [checkoutEbook, setCheckoutEbook] = useState<Ebook | null>(null);
   const [phoneInput, setPhoneInput] = useState("");
+  const [countryCode, setCountryCode] = useState("+237");
   const [clientNameInput, setClientNameInput] = useState("");
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
@@ -483,6 +484,7 @@ export default function App() {
   const handleOpenCheckout = (ebook: Ebook) => {
     setCheckoutEbook(ebook);
     setPhoneInput("");
+    setCountryCode("+237");
     setClientNameInput(user?.email.split("@")[0] || "Client");
     setPurchaseError(null);
     setCheckoutModalOpen(true);
@@ -494,6 +496,13 @@ export default function App() {
 
     setIsPurchasing(true);
     setPurchaseError(null);
+
+    const cleanCountryCode = countryCode.replace(/^\+/, "");
+    let cleanPhone = phoneInput.trim().replace(/\s+/g, "").replace(/^\+/, "").replace(/^00/, "");
+    if (cleanPhone.startsWith(cleanCountryCode)) {
+      cleanPhone = cleanPhone.substring(cleanCountryCode.length);
+    }
+    const formattedPhone = cleanCountryCode + cleanPhone;
 
     try {
       if (hasSupabaseKeys && supabase) {
@@ -521,7 +530,7 @@ export default function App() {
           totalPrice: Number(checkoutEbook.prix),
           article: [{ [checkoutEbook.titre]: Number(checkoutEbook.prix) }],
           personal_Info: [{ userId: user.id, orderId, ebookId: checkoutEbook.id }],
-          numeroSend: phoneInput,
+          numeroSend: formattedPhone,
           nomclient: clientNameInput,
           return_url: "https://ebookstore-73b.pages.dev/?payment=success",
           webhook_url: "https://ebookstore-73b.pages.dev/api/webhook/moneyfusion", // mock webhook
@@ -570,7 +579,7 @@ export default function App() {
       const payload = {
         ebookId: checkoutEbook.id,
         userId: user.id,
-        numeroSend: phoneInput,
+        numeroSend: formattedPhone,
         nomclient: clientNameInput,
         userEmail: user.email,
       };
@@ -1122,16 +1131,51 @@ export default function App() {
                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono mb-1">
                     Numéro de Téléphone Payeur *
                   </label>
-                  <div className="relative flex items-center">
-                    <Phone className="absolute left-3.5 h-4 w-4 text-slate-400" />
-                    <input
-                      type="tel"
-                      required
-                      value={phoneInput}
-                      onChange={(e) => setPhoneInput(e.target.value)}
-                      placeholder="Ex: 07070707"
-                      className="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-mono"
-                    />
+                  <div className="flex gap-2 items-center">
+                    <div className="w-2/5 min-w-[130px]">
+                      <select
+                        value={countryCode}
+                        onChange={(e) => setCountryCode(e.target.value)}
+                        className="w-full h-10 px-2 text-[11px] sm:text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-sans font-semibold text-slate-850 cursor-pointer"
+                      >
+                        <optgroup label="CEMAC">
+                          <option value="+237">🇨🇲 Cameroun (+237)</option>
+                          <option value="+241">🇬🇦 Gabon (+241)</option>
+                          <option value="+242">🇨🇬 Congo (+242)</option>
+                          <option value="+235">🇹🇩 Tchad (+235)</option>
+                          <option value="+236">🇨🇫 RCA (+236)</option>
+                          <option value="+240">🇬🇶 Guinée Éq. (+240)</option>
+                        </optgroup>
+                        <optgroup label="CEDEAO">
+                          <option value="+225">🇨🇮 Côte d'Ivoire (+225)</option>
+                          <option value="+221">🇸🇳 Sénégal (+221)</option>
+                          <option value="+228">🇹🇬 Togo (+228)</option>
+                          <option value="+229">🇧🇯 Bénin (+229)</option>
+                          <option value="+226">🇧🇫 Burkina Faso (+226)</option>
+                          <option value="+223">🇲🇱 Mali (+223)</option>
+                          <option value="+227">🇳🇪 Niger (+227)</option>
+                          <option value="+224">🇬🇳 Guinée (+224)</option>
+                          <option value="+245">🇬🇼 Guinée-Bissau (+245)</option>
+                          <option value="+233">🇬🇭 Ghana (+233)</option>
+                          <option value="+234">🇳🇬 Nigéria (+234)</option>
+                          <option value="+231">🇱🇷 Libéria (+231)</option>
+                          <option value="+232">🇸🇱 Sierra Leone (+232)</option>
+                          <option value="+220">🇬🇲 Gambie (+220)</option>
+                          <option value="+238">🇨🇻 Cap-Vert (+238)</option>
+                        </optgroup>
+                      </select>
+                    </div>
+                    <div className="flex-1 relative flex items-center">
+                      <Phone className="absolute left-3.5 h-4 w-4 text-slate-400" />
+                      <input
+                        type="tel"
+                        required
+                        value={phoneInput}
+                        onChange={(e) => setPhoneInput(e.target.value)}
+                        placeholder="Ex: 699887766"
+                        className="w-full pl-10 pr-4 py-2 h-10 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-mono"
+                      />
+                    </div>
                   </div>
                   <span className="text-[10px] text-slate-400 mt-1 block">
                     Numéro utilisé pour débiter votre mobile money (Orange, MTN, Wave).
