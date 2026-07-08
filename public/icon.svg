@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="indigo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#4f46e5" />
+    </linearGradient>
+    <linearGradient id="accent-grad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#ec4899" />
+    </linearGradient>
+  </defs>
+  <!-- Rounded Squircle Background -->
+  <rect x="32" y="32" width="448" height="448" rx="112" fill="#0f172a" />
+  <!-- Glossy overlay -->
+  <path d="M32 144 C32 100, 100 32, 144 32 L368 32 C412 32, 480 100, 480 144 L480 200 C300 240, 100 220, 32 144 Z" fill="white" fill-opacity="0.03" />
+  <!-- Stylized Open Book Symbol with glowing pages -->
+  <path d="M120 180 C120 160, 240 160, 256 190 C272 160, 392 160, 392 180 L392 340 C392 320, 272 320, 256 350 C240 320, 120 320, 120 340 Z" fill="url(#indigo-grad)" />
+  <!-- Glowing golden pages -->
+  <path d="M140 200 C140 190, 240 195, 250 215 C240 205, 140 205, 140 200 Z" fill="url(#accent-grad)" />
+  <path d="M372 200 C372 190, 272 195, 262 215 C272 205, 372 205, 372 200 Z" fill="url(#accent-grad)" />
+  <!-- Glowing modern binary dots/African tech pattern -->
+  <circle cx="160" cy="240" r="6" fill="#10b981" opacity="0.8" />
+  <circle cx="200" cy="240" r="6" fill="#10b981" opacity="0.8" />
+  <circle cx="312" cy="240" r="6" fill="#10b981" opacity="0.8" />
+  <circle cx="352" cy="240" r="6" fill="#10b981" opacity="0.8" />
+  <circle cx="160" cy="280" r="6" fill="#f59e0b" opacity="0.8" />
+  <circle cx="200" cy="280" r="6" fill="#f59e0b" opacity="0.8" />
+  <circle cx="312" cy="280" r="6" fill="#f59e0b" opacity="0.8" />
+  <circle cx="352" cy="280" r="6" fill="#f59e0b" opacity="0.8" />
+</svg>

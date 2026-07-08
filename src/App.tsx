@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { CreditCard, Phone, Shield, ShoppingBag, X, AlertTriangle, RefreshCw, KeyRound, CheckCircle2 } from "lucide-react";
+import { CreditCard, Phone, Shield, ShoppingBag, X, AlertTriangle, RefreshCw, KeyRound, CheckCircle2, Download } from "lucide-react";
 import Header from "./components/Header";
 import EbookCard from "./components/EbookCard";
 import BookDetailModal from "./components/BookDetailModal";
@@ -8,6 +8,18 @@ import AdminPanel from "./components/AdminPanel";
 import PurchaseList from "./components/PurchaseList";
 import { Ebook, Achat, PaymentStatus } from "./types";
 import { hasSupabaseKeys, supabase, API_BASE_URL } from "./supabaseClient";
+
+// Helper to convert VAPID public key to Uint8Array for Push API subscription
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/\-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
 
 export default function App() {
   // Navigation & Views
@@ -18,6 +30,10 @@ export default function App() {
   // Users & Auth States
   const [user, setUser] = useState<{ id: string; email: string } | null>(null);
   const [role, setRole] = useState<string>("user"); // user | admin
+
+  // PWA states
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isAppInstalled, setIsAppInstalled] = useState(false);
 
   // Catalogs & Transactions
   const [ebooks, setEbooks] = useState<Ebook[]>([]);
@@ -65,6 +81,115 @@ export default function App() {
     fetchConfigStatus();
     fetchEbooks();
   }, []);
+
+  // PWA Service Worker Registration & Installation Prompt Handling
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker
+        .register("/sw.js")
+        .then((reg) => {
+          console.log("[PWA] Service Worker registered successfully, scope:", reg.scope);
+        })
+        .catch((err) => {
+          console.error("[PWA] Service Worker registration failed:", err);
+        });
+    }
+
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      console.log("[PWA] beforeinstallprompt event captured!");
+    };
+
+    const handleAppInstalled = () => {
+      console.log("[PWA] Application installed successfully!");
+      setIsAppInstalled(true);
+      setDeferredPrompt(null);
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+
+    if (window.matchMedia("(display-mode: standalone)").matches || (navigator as any).standalone) {
+      setIsAppInstalled(true);
+    }
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
+  }, []);
+
+  // Push Notifications Automatic Subscription Logic on User Login
+  const subscribeUserToPush = async (userId: string) => {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      console.log("[Push] Notifications push are not supported on this device/browser");
+      return;
+    }
+
+    try {
+      console.log("[Push] Requesting notification permission...");
+      const permission = await Notification.requestPermission();
+      console.log("[Push] Notification permission:", permission);
+      
+      if (permission !== "granted") {
+        console.log("[Push] Notification permission was denied");
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.ready;
+      console.log("[Push] Service Worker is ready, subscribing...");
+      
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(
+          "BEWos_rKaxgZA8k1SfJvzf615UOpNy0EoohAbuiL1FrTFRsn4hO_7DiDs_cN3vfzeOwK7PfncMYQ2TwifvpSjlw"
+        ),
+      });
+
+      console.log("[Push] User subscribed successfully to Push API:", subscription);
+
+      if (hasSupabaseKeys && supabase) {
+        // Query to check if subscription exists
+        const { data: existing } = await supabase
+          .from("push_subscriptions")
+          .select("id")
+          .eq("user_id", userId)
+          .maybeSingle();
+
+        if (!existing) {
+          const { error } = await supabase.from("push_subscriptions").insert({
+            user_id: userId,
+            subscription: subscription.toJSON(),
+          });
+          if (error) {
+            console.error("[Push] Error saving push subscription in DB:", error);
+          } else {
+            console.log("[Push] Push subscription saved in DB successfully");
+          }
+        } else {
+          const { error } = await supabase
+            .from("push_subscriptions")
+            .update({ subscription: subscription.toJSON() })
+            .eq("user_id", userId);
+          if (error) {
+            console.error("[Push] Error updating push subscription in DB:", error);
+          } else {
+            console.log("[Push] Push subscription updated in DB successfully");
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[Push] Failed to register user subscription:", err);
+    }
+  };
+
+  // Trigger push registration when user is set
+  useEffect(() => {
+    if (user) {
+      subscribeUserToPush(user.id);
+    }
+  }, [user]);
 
   // 2. Auth State Sync with real Supabase
   useEffect(() => {
@@ -906,6 +1031,43 @@ export default function App() {
 
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex-1 w-full">
+        {deferredPrompt && !isAppInstalled && (
+          <div className="mb-8 bg-gradient-to-r from-indigo-50 to-slate-50 border border-indigo-150 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-sm animate-in fade-in slide-in-from-top-4 duration-300" id="pwa-install-banner">
+            <div className="flex items-center gap-3.5 text-left w-full">
+              <div className="p-2.5 bg-indigo-100 text-indigo-700 rounded-xl shrink-0">
+                <Download className="h-5 w-5" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-display font-bold text-xs sm:text-sm text-indigo-950">Télécharger l'application EbookStore</h4>
+                <p className="text-[11px] sm:text-xs text-indigo-800 leading-relaxed font-sans">
+                  Installez l'application sur votre écran d'accueil pour un accès instantané et un confort de lecture optimal.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 shrink-0 w-full sm:w-auto justify-end">
+              <button
+                onClick={() => setDeferredPrompt(null)}
+                className="flex-1 sm:flex-initial px-4 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition-all cursor-pointer text-center"
+              >
+                Plus tard
+              </button>
+              <button
+                onClick={async () => {
+                  if (!deferredPrompt) return;
+                  deferredPrompt.prompt();
+                  const { outcome } = await deferredPrompt.userChoice;
+                  console.log(`User prompt response: ${outcome}`);
+                  setDeferredPrompt(null);
+                }}
+                className="flex-1 sm:flex-initial px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-sm hover:shadow text-center flex items-center justify-center gap-1.5"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span>Installer</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {successNotification && (
           <div className="mb-8 p-4 bg-emerald-50 border border-emerald-150 rounded-2xl flex items-start gap-3 shadow-sm animate-in fade-in slide-in-from-top-4 duration-300 relative" id="payment-success-notification">
             <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl shrink-0">
