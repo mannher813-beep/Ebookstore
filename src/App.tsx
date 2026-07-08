@@ -67,8 +67,14 @@ export default function App() {
     if (hasSupabaseKeys && supabase) {
       supabase.auth.getSession().then(({ data: { session } }) => {
         if (session?.user) {
-          setUser({ id: session.user.id, email: session.user.email! });
-          fetchUserProfileAndData(session.user.id, session.access_token);
+          const userEmail = session.user.email || "";
+          setUser({ id: session.user.id, email: userEmail });
+          if (userEmail === "techsen237@gmail.com") {
+            setRole("admin");
+          } else {
+            setRole("user");
+          }
+          fetchUserProfileAndData(session.user.id, session.access_token, userEmail);
         } else {
           setUser(null);
           setRole("user");
@@ -77,8 +83,14 @@ export default function App() {
 
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
         if (session?.user) {
-          setUser({ id: session.user.id, email: session.user.email! });
-          fetchUserProfileAndData(session.user.id, session.access_token);
+          const userEmail = session.user.email || "";
+          setUser({ id: session.user.id, email: userEmail });
+          if (userEmail === "techsen237@gmail.com") {
+            setRole("admin");
+          } else {
+            setRole("user");
+          }
+          fetchUserProfileAndData(session.user.id, session.access_token, userEmail);
         } else {
           setUser(null);
           setRole("user");
@@ -126,7 +138,7 @@ export default function App() {
   };
 
   // Fetch real User Profile and Purchases via backend
-  const fetchUserProfileAndData = async (userId: string, token: string) => {
+  const fetchUserProfileAndData = async (userId: string, token: string, userEmail?: string) => {
     try {
       const res = await fetch("/api/user-data", {
         headers: {
@@ -135,7 +147,12 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
-        setRole(data.role);
+        const emailToCheck = userEmail || data.user?.email || "";
+        if (emailToCheck === "techsen237@gmail.com" || data.role === "admin") {
+          setRole("admin");
+        } else {
+          setRole("user");
+        }
         setPurchases(data.purchases);
       }
     } catch (err) {

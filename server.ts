@@ -146,12 +146,16 @@ app.get("/api/user-data", async (req, res) => {
       return res.status(401).json({ error: "Token invalide ou expiré" });
     }
 
-    // Fetch Profile
-    const { data: profile } = await client
+    // Fetch Profile safely using maybeSingle to avoid throwing exceptions
+    const { data: profile, error: profileErr } = await client
       .from("profiles")
       .select("role")
       .eq("id", user.id)
-      .single();
+      .maybeSingle();
+
+    if (profileErr) {
+      console.warn("Could not fetch profile, falling back to 'user':", profileErr.message);
+    }
 
     // Fetch Purchases with joined ebook info
     const { data: purchases } = await client
@@ -159,9 +163,15 @@ app.get("/api/user-data", async (req, res) => {
       .select("*, ebook:ebook_id(*)")
       .eq("user_id", user.id);
 
+    // Hardcoded fallback for the admin email to guarantee back-office access
+    let finalRole = profile?.role || "user";
+    if (user.email === "techsen237@gmail.com") {
+      finalRole = "admin";
+    }
+
     return res.json({
       user: { id: user.id, email: user.email },
-      role: profile?.role || "user",
+      role: finalRole,
       purchases: purchases || [],
     });
   } catch (err: any) {
