@@ -233,7 +233,7 @@ export default function App() {
   };
 
   // Admin: Add Ebook
-  const handleAddEbook = async (ebookData: Omit<Ebook, "id">): Promise<boolean> => {
+  const handleAddEbook = async (ebookData: Omit<Ebook, "id">): Promise<{ success: boolean; error?: string }> => {
     try {
       const session = supabase ? (await supabase.auth.getSession()).data.session : null;
       const token = session ? `Bearer ${session.access_token}` : "";
@@ -246,14 +246,18 @@ export default function App() {
         },
         body: JSON.stringify(ebookData),
       });
+
       if (res.ok) {
         await fetchEbooks();
-        return true;
+        return { success: true };
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        console.error("Failed to add ebook from server:", errData);
+        return { success: false, error: errData.error || "Une erreur inconnue est survenue côté serveur." };
       }
-      return false;
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to add ebook:", err);
-      return false;
+      return { success: false, error: err.message || "Erreur de connexion avec le serveur." };
     }
   };
 

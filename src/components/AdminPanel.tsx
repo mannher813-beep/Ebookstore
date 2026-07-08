@@ -4,7 +4,7 @@ import { Ebook, Achat } from "../types";
 
 interface AdminPanelProps {
   ebooks: Ebook[];
-  onAddEbook: (ebook: Omit<Ebook, "id">) => Promise<boolean>;
+  onAddEbook: (ebook: Omit<Ebook, "id">) => Promise<{ success: boolean; error?: string }>;
   onDeleteEbook: (id: string) => Promise<boolean>;
   configStatus: any;
 }
@@ -198,29 +198,44 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
       return;
     }
 
-    const added = await onAddEbook({
-      titre,
-      description,
-      prix: Number(prix),
-      url_couverture: urlCouverture,
-      url_fichier_storage: urlFichier,
-      categorie,
-    });
-
-    if (added) {
-      setSuccess(true);
-      setTitre("");
-      setDescription("");
-      setPrix("");
-      setUrlCouverture("");
-      setUrlFichier("");
-      setCouvertureName("");
-      setPdfName("");
-      setTimeout(() => setSuccess(false), 3000);
-    } else {
-      setError("Échec de la création de l'ebook.");
+    // Clean and validate the price (numeric)
+    const cleanedPrix = prix.toString().replace(/,/g, ".").replace(/\s/g, "");
+    const parsedPrix = Number(cleanedPrix);
+    if (isNaN(parsedPrix) || parsedPrix <= 0) {
+      setError("Le prix saisi n'est pas un nombre valide. Veuillez entrer uniquement des chiffres (ex : 5000 ou 49.99).");
+      setLoading(false);
+      return;
     }
-    setLoading(false);
+
+    try {
+      const result = await onAddEbook({
+        titre: titre.trim(),
+        description: description.trim(),
+        prix: parsedPrix,
+        url_couverture: urlCouverture.trim(),
+        url_fichier_storage: urlFichier.trim(),
+        categorie: categorie.trim(),
+      });
+
+      if (result.success) {
+        setSuccess(true);
+        setTitre("");
+        setDescription("");
+        setPrix("");
+        setUrlCouverture("");
+        setUrlFichier("");
+        setCouvertureName("");
+        setPdfName("");
+        setTimeout(() => setSuccess(false), 3000);
+      } else {
+        setError(result.error || "Échec de la création de l'ebook.");
+      }
+    } catch (err: any) {
+      console.error("Exception in handleSubmit:", err);
+      setError("Une exception est survenue lors de l'enregistrement : " + (err.message || err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDelete = async (id: string) => {
