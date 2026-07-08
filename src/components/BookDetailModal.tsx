@@ -1,5 +1,5 @@
-import React from "react";
-import { X, CreditCard, ArrowRight, Download, Calendar, ShieldCheck, CheckCircle2, FileText, Globe } from "lucide-react";
+import React, { useState } from "react";
+import { X, CreditCard, ArrowRight, Download, Calendar, ShieldCheck, CheckCircle2, FileText, Globe, Share2, Check } from "lucide-react";
 import { Ebook } from "../types";
 
 interface BookDetailModalProps {
@@ -25,7 +25,33 @@ export default function BookDetailModal({
   onDownload,
   downloadingId,
 }: BookDetailModalProps) {
+  const [copied, setCopied] = useState(false);
+
   if (!ebook) return null;
+
+  const handleShare = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const shareUrl = `https://ebookstore-73b.pages.dev/ebook/${ebook.id}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: ebook.titre,
+          text: ebook.description || `Découvrez l'ebook "${ebook.titre}" sur EbookStore !`,
+          url: shareUrl,
+        });
+      } catch (err) {
+        console.log("Error sharing:", err);
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        console.error("Failed to copy:", err);
+      }
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto" id="book-detail-modal">
@@ -42,6 +68,21 @@ export default function BookDetailModal({
             className="absolute right-4 top-4 z-10 p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 transition-all cursor-pointer"
           >
             <X className="h-4 w-4" />
+          </button>
+
+          {/* Share Button (Top right, next to close) */}
+          <button
+            onClick={handleShare}
+            className="absolute right-14 top-4 z-10 p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 transition-all cursor-pointer flex items-center justify-center"
+            title="Partager cet ebook"
+          >
+            {copied ? (
+              <span className="flex items-center gap-1 px-1 text-[10px] text-emerald-600 font-bold font-mono">
+                <Check className="h-3 w-3" /> Copié
+              </span>
+            ) : (
+              <Share2 className="h-4 w-4" />
+            )}
           </button>
 
           {/* Left Column: Cover */}
@@ -67,7 +108,7 @@ export default function BookDetailModal({
           </div>
 
           {/* Right Column: Book details */}
-          <div className="p-6 md:p-8 flex-1 flex flex-col justify-between">
+          <div className="p-6 md:p-8 flex-1 flex flex-col justify-between pb-24 md:pb-8">
             <div>
               {/* Category */}
               <span className="inline-block bg-indigo-50 text-indigo-700 text-[10px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-md border border-indigo-100 font-mono mb-3">
@@ -128,39 +169,94 @@ export default function BookDetailModal({
                     <CheckCircle2 className="h-4 w-4 shrink-0" />
                     <span>Vous avez acheté ce livre. Téléchargez votre copie ci-dessous :</span>
                   </div>
-                  <button
-                    onClick={() => onDownload(ebook.id)}
-                    disabled={downloadingId === ebook.id}
-                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white disabled:bg-slate-100 disabled:text-slate-400 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md hover:shadow-lg active:scale-95"
-                  >
-                    <Download className="h-4.5 w-4.5" />
-                    <span>{downloadingId === ebook.id ? "Préparation du lien signé..." : "Télécharger mon Ebook (PDF)"}</span>
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => onDownload(ebook.id)}
+                      disabled={downloadingId === ebook.id}
+                      className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white disabled:bg-slate-100 disabled:text-slate-400 text-xs sm:text-sm font-extrabold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md hover:shadow-lg active:scale-95"
+                    >
+                      <Download className="h-4.5 w-4.5" />
+                      <span>{downloadingId === ebook.id ? "Préparation du lien signé..." : "Télécharger mon Ebook (PDF)"}</span>
+                    </button>
+
+                    <button
+                      onClick={handleShare}
+                      className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 rounded-xl transition-all flex items-center justify-center cursor-pointer shrink-0 border border-slate-200"
+                      title="Partager"
+                    >
+                      {copied ? (
+                        <span className="text-xs font-bold text-emerald-600 px-1 font-mono">Copié !</span>
+                      ) : (
+                        <Share2 className="h-5 w-5" />
+                      )}
+                    </button>
+                  </div>
                 </div>
               ) : (
-                <button
-                  onClick={() => {
-                    if (!user) {
-                      onOpenAuth();
-                    } else {
-                      onBuy(ebook);
-                    }
-                  }}
-                  disabled={isPurchasing}
-                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-slate-100 disabled:text-slate-400 text-xs sm:text-sm font-black rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md hover:shadow-lg active:scale-95"
-                >
-                  <CreditCard className="h-4.5 w-4.5" />
-                  <span>
-                    {isPurchasing
-                      ? "Initialisation de la transaction..."
-                      : `Acheter via Mobile Money (${ebook.prix.toLocaleString()} FCFA)`}
-                  </span>
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      if (!user) {
+                        onOpenAuth();
+                      } else {
+                        onBuy(ebook);
+                      }
+                    }}
+                    disabled={isPurchasing}
+                    className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-slate-100 disabled:text-slate-400 text-xs sm:text-sm font-black rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md hover:shadow-lg active:scale-95"
+                  >
+                    <CreditCard className="h-4.5 w-4.5" />
+                    <span>
+                      {isPurchasing
+                        ? "Initialisation de la transaction..."
+                        : `Acheter via Mobile Money (${ebook.prix.toLocaleString()} FCFA)`}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={handleShare}
+                    className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 rounded-xl transition-all flex items-center justify-center cursor-pointer shrink-0 border border-slate-200"
+                    title="Partager"
+                  >
+                    {copied ? (
+                      <span className="text-xs font-bold text-emerald-600 px-1 font-mono">Copié !</span>
+                    ) : (
+                      <Share2 className="h-5 w-5" />
+                    )}
+                  </button>
+                </div>
               )}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Mobile Floating Sticky CTA */}
+      {!hasPurchased && (
+        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-4 z-40 shadow-[0_-8px_30px_rgb(0,0,0,0.12)] flex items-center justify-between gap-4 animate-in slide-in-from-bottom duration-300">
+          <div className="text-left">
+            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider font-mono block">Tarif unique</span>
+            <span className="font-display font-black text-lg text-slate-950">
+              {ebook.prix.toLocaleString()} <span className="text-xs text-indigo-500 font-bold font-mono">FCFA</span>
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              if (!user) {
+                onOpenAuth();
+              } else {
+                onBuy(ebook);
+              }
+            }}
+            disabled={isPurchasing}
+            className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-slate-100 disabled:text-slate-400 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md active:scale-95 duration-200 animate-pulse"
+            style={{ animationDuration: "3s" }}
+          >
+            <CreditCard className="h-4 w-4" />
+            <span>{isPurchasing ? "Traitement..." : "Acheter maintenant"}</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

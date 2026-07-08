@@ -1,5 +1,5 @@
-import React from "react";
-import { CreditCard, ArrowRight, CheckCircle, Eye, Star } from "lucide-react";
+import React, { useState } from "react";
+import { CreditCard, ArrowRight, CheckCircle, Eye, Star, Share2, Check } from "lucide-react";
 import { Ebook } from "../types";
 
 interface EbookCardProps {
@@ -25,6 +25,31 @@ export default function EbookCard({
   // Simple random static rating generator for visual elegance
   const rating = 4.8;
   const reviewsCount = 14;
+  const [copied, setCopied] = useState(false);
+
+  const handleShare = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const shareUrl = `https://ebookstore-73b.pages.dev/ebook/${ebook.id}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: ebook.titre,
+          text: ebook.description || `Découvrez l'ebook "${ebook.titre}" sur EbookStore !`,
+          url: shareUrl,
+        });
+      } catch (err) {
+        console.log("Error sharing:", err);
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (err) {
+        console.error("Failed to copy:", err);
+      }
+    }
+  };
 
   return (
     <div
@@ -99,18 +124,31 @@ export default function EbookCard({
 
           {/* Checkout CTAs */}
           {hasPurchased ? (
-            <button
-              onClick={() => onSelect(ebook)}
-              className="w-full py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-emerald-200"
-            >
-              <span>Accéder au Téléchargement</span>
-              <ArrowRight className="h-3.5 w-3.5" />
-            </button>
-          ) : (
-            <div className="grid grid-cols-5 gap-2">
+            <div className="flex gap-2">
               <button
                 onClick={() => onSelect(ebook)}
-                className="col-span-2 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer border border-slate-200"
+                className="flex-1 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-emerald-200"
+              >
+                <span>Accéder au Téléchargement</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={handleShare}
+                className="p-2 bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-slate-950 border border-slate-200 rounded-xl transition-all flex items-center justify-center cursor-pointer shrink-0"
+                title="Partager"
+              >
+                {copied ? (
+                  <span className="text-[10px] font-bold text-emerald-600 px-1 font-mono">Copié !</span>
+                ) : (
+                  <Share2 className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <button
+                onClick={() => onSelect(ebook)}
+                className="flex-1 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer border border-slate-200"
               >
                 <span>Détails</span>
               </button>
@@ -124,10 +162,22 @@ export default function EbookCard({
                   }
                 }}
                 disabled={isPurchasing}
-                className="col-span-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-slate-100 disabled:text-slate-400 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm hover:shadow active:scale-95"
+                className="flex-[1.5] py-2 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-slate-100 disabled:text-slate-400 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm hover:shadow active:scale-95"
               >
                 <CreditCard className="h-3.5 w-3.5" />
                 <span>{isPurchasing ? "Traitement..." : "Acheter"}</span>
+              </button>
+
+              <button
+                onClick={handleShare}
+                className="p-2 bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-slate-950 border border-slate-200 rounded-xl transition-all flex items-center justify-center cursor-pointer shrink-0"
+                title="Partager"
+              >
+                {copied ? (
+                  <span className="text-[10px] font-bold text-emerald-600 px-1 font-mono">Copié !</span>
+                ) : (
+                  <Share2 className="h-4 w-4" />
+                )}
               </button>
             </div>
           )}

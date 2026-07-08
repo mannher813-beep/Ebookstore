@@ -236,6 +236,55 @@ export default function App() {
     }
   }, [user]);
 
+  // 4. Router-like deep linking and browser history synchronization for /ebook/{id}
+  useEffect(() => {
+    const handlePopState = () => {
+      const match = window.location.pathname.match(/^\/ebook\/([a-zA-Z0-9-]+)/);
+      if (match && ebooks.length > 0) {
+        const ebookId = match[1];
+        const found = ebooks.find((b) => b.id === ebookId);
+        if (found) {
+          setSelectedEbook(found);
+        } else {
+          setSelectedEbook(null);
+        }
+      } else {
+        setSelectedEbook(null);
+      }
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [ebooks]);
+
+  // Handle initial deep link load once ebooks are fetched
+  useEffect(() => {
+    const match = window.location.pathname.match(/^\/ebook\/([a-zA-Z0-9-]+)/);
+    if (match && ebooks.length > 0) {
+      const ebookId = match[1];
+      const found = ebooks.find((b) => b.id === ebookId);
+      if (found) {
+        setSelectedEbook(found);
+      }
+    }
+  }, [ebooks]);
+
+  // Synchronize browser URL bar with selectedEbook changes
+  useEffect(() => {
+    const match = window.location.pathname.match(/^\/ebook\/([a-zA-Z0-9-]+)/);
+    const currentUrlId = match ? match[1] : null;
+
+    if (selectedEbook) {
+      if (currentUrlId !== selectedEbook.id) {
+        window.history.pushState(null, "", `/ebook/${selectedEbook.id}`);
+      }
+    } else {
+      if (window.location.pathname.startsWith("/ebook/")) {
+        window.history.pushState(null, "", "/");
+      }
+    }
+  }, [selectedEbook]);
+
   const fetchConfigStatus = async () => {
     setLoadingConfig(true);
     try {
