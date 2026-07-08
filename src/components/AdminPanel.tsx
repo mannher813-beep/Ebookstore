@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Trash2, Database, ShieldCheck, DollarSign, ListOrdered, Code, ArrowUpRight, HelpCircle, FileText } from "lucide-react";
+import { Plus, Trash2, Database, ShieldCheck, DollarSign, ListOrdered, Code, ArrowUpRight, HelpCircle, FileText, UploadCloud, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { Ebook, Achat } from "../types";
 
 interface AdminPanelProps {
@@ -19,6 +19,14 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [uploadingCouverture, setUploadingCouverture] = useState(false);
+  const [progressCouverture, setProgressCouverture] = useState(0);
+  const [couvertureName, setCouvertureName] = useState("");
+
+  const [uploadingPdf, setUploadingPdf] = useState(false);
+  const [progressPdf, setProgressPdf] = useState(0);
+  const [pdfName, setPdfName] = useState("");
 
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loadingTx, setLoadingTx] = useState(false);
@@ -51,6 +59,133 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
     fetchTransactions();
   }, [ebooks]);
 
+  const handleCouvertureChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setError(null);
+    setUploadingCouverture(true);
+    setProgressCouverture(0);
+    setCouvertureName(file.name);
+
+    // Validate type
+    if (!file.type.startsWith("image/")) {
+      setError("Le fichier de couverture doit être une image (PNG, JPG, WEBP, etc.).");
+      setUploadingCouverture(false);
+      return;
+    }
+
+    // Validate size (10 MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setError("L'image de couverture est trop lourde (max 10 Mo).");
+      setUploadingCouverture(false);
+      return;
+    }
+
+    // Simulated progress bar
+    const interval = setInterval(() => {
+      setProgressCouverture((prev) => {
+        if (prev >= 90) return prev;
+        return prev + 10;
+      });
+    }, 100);
+
+    try {
+      const { supabase } = await import("../supabaseClient");
+      if (!supabase) {
+        throw new Error("Client Supabase non initialisé.");
+      }
+
+      const fileExt = file.name.split(".").pop() || "png";
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 10)}.${fileExt}`;
+
+      const { data, error: uploadErr } = await supabase.storage
+        .from("couvertures")
+        .upload(fileName, file, { cacheControl: "3600", upsert: false });
+
+      if (uploadErr) {
+        throw uploadErr;
+      }
+
+      // Get public URL
+      const { data: publicUrlData } = supabase.storage
+        .from("couvertures")
+        .getPublicUrl(fileName);
+
+      setUrlCouverture(publicUrlData.publicUrl);
+      setProgressCouverture(100);
+    } catch (err: any) {
+      console.error("Cover upload error:", err);
+      setError("Erreur lors du téléversement de la couverture : " + (err.message || err));
+      setCouvertureName("");
+      setUrlCouverture("");
+    } finally {
+      clearInterval(interval);
+      setUploadingCouverture(false);
+    }
+  };
+
+  const handlePdfChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setError(null);
+    setUploadingPdf(true);
+    setProgressPdf(0);
+    setPdfName(file.name);
+
+    // Validate type
+    if (file.type !== "application/pdf" && !file.name.endsWith(".pdf")) {
+      setError("Le fichier doit obligatoirement être un document PDF.");
+      setUploadingPdf(false);
+      return;
+    }
+
+    // Validate size (100 MB)
+    if (file.size > 100 * 1024 * 1024) {
+      setError("Le fichier PDF est trop lourd (max 100 Mo).");
+      setUploadingPdf(false);
+      return;
+    }
+
+    // Simulated progress bar
+    const interval = setInterval(() => {
+      setProgressPdf((prev) => {
+        if (prev >= 95) return prev;
+        return prev + 5;
+      });
+    }, 150);
+
+    try {
+      const { supabase } = await import("../supabaseClient");
+      if (!supabase) {
+        throw new Error("Client Supabase non initialisé.");
+      }
+
+      const fileExt = file.name.split(".").pop() || "pdf";
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 10)}.${fileExt}`;
+
+      const { data, error: uploadErr } = await supabase.storage
+        .from("ebooks-fichiers")
+        .upload(fileName, file, { cacheControl: "3600", upsert: false });
+
+      if (uploadErr) {
+        throw uploadErr;
+      }
+
+      setUrlFichier(fileName);
+      setProgressPdf(100);
+    } catch (err: any) {
+      console.error("PDF upload error:", err);
+      setError("Erreur lors du téléversement du PDF : " + (err.message || err));
+      setPdfName("");
+      setUrlFichier("");
+    } finally {
+      clearInterval(interval);
+      setUploadingPdf(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -58,7 +193,7 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
     setLoading(true);
 
     if (!titre || !description || !prix || !urlCouverture || !urlFichier || !categorie) {
-      setError("Veuillez remplir tous les champs requis.");
+      setError("Veuillez remplir tous les champs requis et téléverser les fichiers.");
       setLoading(false);
       return;
     }
@@ -79,6 +214,8 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
       setPrix("");
       setUrlCouverture("");
       setUrlFichier("");
+      setCouvertureName("");
+      setPdfName("");
       setTimeout(() => setSuccess(false), 3000);
     } else {
       setError("Échec de la création de l'ebook.");
@@ -196,40 +333,132 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
                 </select>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wider font-mono mb-1.5">Couverture (Image URL) *</label>
-                <input
-                  type="url"
-                  required
-                  placeholder="https://images.unsplash.com/..."
-                  value={urlCouverture}
-                  onChange={(e) => setUrlCouverture(e.target.value)}
-                  className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-xs font-mono"
-                />
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wider font-mono mb-1">
+                  Image de Couverture *
+                </label>
+                <div className="relative border-2 border-dashed border-slate-200 rounded-2xl p-3 hover:bg-slate-50 hover:border-indigo-400 transition-all cursor-pointer flex flex-col items-center justify-center text-center group min-h-[96px]">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleCouvertureChange}
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                    disabled={uploadingCouverture}
+                  />
+                  {urlCouverture ? (
+                    <div className="flex items-center gap-3 w-full text-left">
+                      <img
+                        src={urlCouverture}
+                        alt="Aperçu"
+                        className="h-14 w-10 object-cover rounded shadow-sm shrink-0"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="overflow-hidden flex-1 space-y-0.5">
+                        <p className="text-[11px] font-bold text-slate-800 truncate">{couvertureName || "couverture.png"}</p>
+                        <span className="inline-flex items-center gap-1 text-[9px] font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                          <CheckCircle className="h-2.5 w-2.5" /> Téléversé
+                        </span>
+                      </div>
+                    </div>
+                  ) : uploadingCouverture ? (
+                    <div className="w-full space-y-1.5">
+                      <div className="flex items-center justify-between text-[10px] text-slate-600 font-medium">
+                        <span className="flex items-center gap-1 font-mono">
+                          <Loader2 className="h-3 w-3 animate-spin text-indigo-600" /> Image...
+                        </span>
+                        <span>{progressCouverture}%</span>
+                      </div>
+                      <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden">
+                        <div
+                          className="bg-indigo-600 h-full rounded-full transition-all duration-300"
+                          style={{ width: `${progressCouverture}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <UploadCloud className="h-5 w-5 text-slate-400 group-hover:text-indigo-500 mx-auto transition-colors" />
+                      <p className="text-[11px] font-bold text-slate-700">Choisir une image</p>
+                      <p className="text-[9px] text-slate-400">PNG, JPG, WEBP (Max 10Mo)</p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div>
-              <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wider font-mono mb-1.5">Fichier PDF dans le Storage (Chemin complet) *</label>
-              <input
-                type="text"
-                required
-                placeholder="Ex : guide_marketing_afrique.pdf"
-                value={urlFichier}
-                onChange={(e) => setUrlFichier(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-xs font-mono"
-              />
-              <span className="text-[10px] text-slate-400 mt-1.5 block leading-normal">
-                Ce fichier doit résider dans votre bucket privé Supabase Storage <strong>"ebooks-fichiers"</strong>.
+            <div className="space-y-1">
+              <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wider font-mono mb-1">
+                Document PDF de l'Ouvrage *
+              </label>
+              <div className="relative border-2 border-dashed border-slate-200 rounded-2xl p-4 hover:bg-slate-50 hover:border-indigo-400 transition-all cursor-pointer flex flex-col items-center justify-center text-center group min-h-[96px]">
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  onChange={handlePdfChange}
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                  disabled={uploadingPdf}
+                />
+                {urlFichier ? (
+                  <div className="flex items-center gap-3 w-full text-left">
+                    <div className="h-11 w-11 bg-rose-50 border border-rose-100 text-rose-600 rounded-xl flex items-center justify-center shrink-0">
+                      <FileText className="h-5.5 w-5.5" />
+                    </div>
+                    <div className="overflow-hidden flex-1 space-y-0.5">
+                      <p className="text-[11px] font-bold text-slate-800 truncate">{pdfName || "ebook.pdf"}</p>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1 text-[9px] font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                          <CheckCircle className="h-2.5 w-2.5" /> Téléversé
+                        </span>
+                        <span className="text-[9px] text-slate-400 font-mono truncate max-w-[140px]">
+                          Chemin: {urlFichier}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ) : uploadingPdf ? (
+                  <div className="w-full space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px] text-slate-600 font-medium">
+                      <span className="flex items-center gap-1 font-mono">
+                        <Loader2 className="h-3 w-3 animate-spin text-indigo-600" /> PDF...
+                      </span>
+                      <span>{progressPdf}%</span>
+                    </div>
+                    <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden">
+                      <div
+                        className="bg-indigo-600 h-full rounded-full transition-all duration-300"
+                        style={{ width: `${progressPdf}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <UploadCloud className="h-5 w-5 text-slate-400 group-hover:text-indigo-500 mx-auto transition-colors" />
+                    <p className="text-[11px] font-bold text-slate-700">Choisir le fichier PDF</p>
+                    <p className="text-[9px] text-slate-400">PDF uniquement (Max 100Mo)</p>
+                  </div>
+                )}
+              </div>
+              <span className="text-[9px] text-slate-400 block leading-normal">
+                Ce fichier sera stocké de manière privée et cryptée sur le bucket <strong>"ebooks-fichiers"</strong>.
               </span>
             </div>
 
             <button
               type="submit"
-              disabled={loading}
-              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-100 text-white disabled:text-slate-400 font-bold text-xs sm:text-sm rounded-xl transition-all cursor-pointer shadow hover:shadow-md"
+              disabled={loading || uploadingCouverture || uploadingPdf || !urlCouverture || !urlFichier}
+              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-100 text-white disabled:text-slate-400 font-bold text-xs sm:text-sm rounded-xl transition-all cursor-pointer shadow hover:shadow-md flex items-center justify-center gap-2"
             >
-              {loading ? "Création en cours..." : "Enregistrer l'Ebook"}
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Enregistrement...
+                </>
+              ) : uploadingCouverture || uploadingPdf ? (
+                "Téléversement en cours..."
+              ) : !urlCouverture || !urlFichier ? (
+                "Téléversez la couverture et le PDF"
+              ) : (
+                "Enregistrer l'Ebook"
+              )}
             </button>
           </form>
         </div>
