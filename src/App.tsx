@@ -476,55 +476,21 @@ export default function App() {
               </div>
 
               {dbError ? (
-                <div className="bg-amber-50 border border-amber-200 rounded-3xl p-6 sm:p-10 space-y-6 max-w-3xl mx-auto shadow-sm">
-                  <div className="flex items-start gap-4">
-                    <div className="p-3 bg-amber-500/10 text-amber-600 rounded-2xl border border-amber-500/20 shrink-0">
-                      <AlertTriangle className="h-6 w-6" />
-                    </div>
-                    <div className="space-y-2">
-                      <h4 className="font-display font-black text-lg text-amber-900 leading-tight">
-                        Schéma de la base de données non détecté
-                      </h4>
-                      <p className="text-xs sm:text-sm text-amber-850 leading-relaxed">
-                        Le serveur est correctement connecté à votre projet Supabase, mais la table <code className="bg-amber-100/80 px-1.5 py-0.5 rounded text-amber-950 font-mono text-xs font-bold">ebooks</code> n'a pas été trouvée. Vous devez initialiser votre base de données en exécutant le script SQL d'initialisation.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-900 text-slate-100 rounded-2xl p-5 sm:p-6 space-y-4">
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                      <span className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">
-                        Script d'initialisation SQL à copier
-                      </span>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(`-- 1. Create Profile Roles type\nCREATE TYPE user_role AS ENUM ('user', 'admin');\n\n-- 2. Create Profiles Table (Linked to auth.users)\nCREATE TABLE public.profiles (\n  id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,\n  role user_role NOT NULL DEFAULT 'user'::user_role,\n  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())\n);\n\n-- 3. Create Ebooks Table\nCREATE TABLE public.ebooks (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  titre TEXT NOT NULL,\n  description TEXT NOT NULL,\n  prix NUMERIC NOT NULL CHECK (prix >= 0),\n  url_couverture TEXT NOT NULL,\n  url_fichier_storage TEXT NOT NULL,\n  categorie TEXT NOT NULL,\n  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL\n);\n\n-- 4. Create Achats (Purchases) Table\nCREATE TABLE public.achats (\n  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,\n  user_id UUID REFERENCES auth.users ON DELETE CASCADE NOT NULL,\n  ebook_id UUID REFERENCES public.ebooks ON DELETE CASCADE NOT NULL,\n  token_pay TEXT UNIQUE NOT NULL,\n  statut TEXT NOT NULL DEFAULT 'pending',\n  montant NUMERIC NOT NULL,\n  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL\n);\n\n-- Enable Row Level Security\nALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.ebooks ENABLE ROW LEVEL SECURITY;\nALTER TABLE public.achats ENABLE ROW LEVEL SECURITY;\n\n-- Policies\nCREATE POLICY "Anyone can view ebooks" ON public.ebooks FOR SELECT USING (true);\nCREATE POLICY "Users can view their own purchases" ON public.achats FOR SELECT USING (auth.uid() = user_id);\nCREATE POLICY "Users can view their own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);`);
-                          alert("Le script SQL d'initialisation a été copié dans votre presse-papiers !");
-                        }}
-                        className="text-xs font-bold text-indigo-400 hover:text-indigo-350 transition-colors cursor-pointer"
-                      >
-                        Copier le script SQL
-                      </button>
-                    </div>
-                    
-                    <p className="text-xs text-slate-300 leading-relaxed font-sans">
-                      1. Connectez-vous à votre dashboard <strong>Supabase</strong>.<br />
-                      2. Allez dans l'onglet <strong>SQL Editor</strong> dans le menu de gauche.<br />
-                      3. Cliquez sur <strong>New query</strong>.<br />
-                      4. Collez le script d'initialisation fourni dans le fichier <code className="text-indigo-400 font-mono text-[11px]">supabase_schema.sql</code> de ce projet.<br />
-                      5. Cliquez sur <strong>Run</strong> pour exécuter le script, puis rafraîchissez cette page.
+                <div className="bg-rose-50 border border-rose-150 rounded-2xl p-6 text-center space-y-4 max-w-lg mx-auto">
+                  <AlertTriangle className="h-10 w-10 text-rose-500 mx-auto" />
+                  <div className="space-y-1.5">
+                    <h4 className="font-display font-bold text-base text-slate-900">Impossible de charger le catalogue d'ebooks</h4>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Une erreur est survenue lors de l'accès aux données. Veuillez actualiser la page ou contacter le support.
                     </p>
                   </div>
-
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      onClick={() => fetchEbooks()}
-                      className="py-2.5 px-5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs sm:text-sm rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow"
-                    >
-                      <RefreshCw className="h-4 w-4" />
-                      <span>Réessayer la connexion</span>
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => fetchEbooks()}
+                    className="py-2.5 px-5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all cursor-pointer inline-flex items-center gap-2 shadow"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" style={{ animationDuration: "3s" }} />
+                    <span>Réessayer la connexion</span>
+                  </button>
                 </div>
               ) : loadingEbooks ? (
                 <div className="flex flex-col items-center justify-center py-24 space-y-3">
