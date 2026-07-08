@@ -343,7 +343,7 @@ app.post("/api/payments/create", async (req, res) => {
       personal_Info: [{ userId, orderId, ebookId }],
       numeroSend,
       nomclient,
-      return_url: `${appUrl}/mes-achats?token=${tokenPay}`,
+      return_url: "https://ebookstore-73b.pages.dev/?payment=success",
       webhook_url: `${appUrl}/api/webhook/moneyfusion`,
     };
 

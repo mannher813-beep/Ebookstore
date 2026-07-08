@@ -40,6 +40,9 @@ export default function App() {
   // Downloading State
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
+  // Success notification banner state
+  const [successNotification, setSuccessNotification] = useState<{ show: boolean; message: string } | null>(null);
+
   // Diagnostic Config Status Overview
   const [configStatus, setConfigStatus] = useState<{
     isRealProduction: boolean;
@@ -101,6 +104,75 @@ export default function App() {
       return () => subscription.unsubscribe();
     }
   }, [currentView]);
+
+  const handleVerifyPaymentOnReturn = async (token: string) => {
+    try {
+      const res = await fetch(`/api/payments/status/${token}`);
+      if (res.ok) {
+        const updatedPurchase = await res.json();
+        if (updatedPurchase.statut === "paid") {
+          setSuccessNotification({
+            show: true,
+            message: `🎉 Félicitations ! Votre paiement pour l'ebook "${updatedPurchase.ebook?.titre || "acheté"}" a été validé avec succès. Votre téléchargement est disponible !`,
+          });
+        } else if (updatedPurchase.statut === "failure") {
+          setSuccessNotification({
+            show: true,
+            message: "⚠️ Votre paiement a été annulé ou n'a pas pu être validé. Si vous pensez qu'il s'agit d'une erreur, veuillez contacter le support.",
+          });
+        } else {
+          setSuccessNotification({
+            show: true,
+            message: "⏳ Votre paiement est en cours de validation par MoneyFusion (Statut : En attente). Vos ebooks seront débloqués automatiquement d'ici quelques instants. Vous pouvez rafraîchir le statut manuellement si nécessaire.",
+          });
+        }
+      } else {
+        setSuccessNotification({
+          show: true,
+          message: "🎉 Félicitations ! Votre paiement a été initié avec succès. Vos ebooks achetés apparaîtront dans votre espace ci-dessous après validation de la transaction.",
+        });
+      }
+    } catch (err) {
+      console.error("Error verifying payment on return:", err);
+      setSuccessNotification({
+        show: true,
+        message: "🎉 Félicitations ! Votre paiement a été initié avec succès. Vos ebooks achetés apparaîtront dans votre espace ci-dessous après validation de la transaction.",
+      });
+    } finally {
+      setView("my-purchases");
+      // Refresh user purchases
+      if (user && supabase) {
+        const session = (await supabase.auth.getSession()).data.session;
+        if (session) {
+          fetchUserProfileAndData(user.id, session.access_token, user.email);
+        }
+      }
+    }
+  };
+
+  // 3. Detect and handle URL query param ?payment=success from MoneyFusion return_url
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("payment") === "success") {
+      // Clean up URL parameter to avoid repetitive triggers on page reloads
+      const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+      window.history.replaceState({ path: cleanUrl }, "", cleanUrl);
+
+      // Check for saved pending token in local storage
+      const pendingToken = localStorage.getItem("pending_payment_token");
+      if (pendingToken) {
+        localStorage.removeItem("pending_payment_token");
+        handleVerifyPaymentOnReturn(pendingToken);
+      } else {
+        // Fallback message if token is missing from localStorage
+        setSuccessNotification({
+          show: true,
+          message: "🎉 Félicitations ! Votre paiement a été enregistré par MoneyFusion. Vos ebooks achetés apparaîtront dans votre espace ci-dessous dès réception de la notification de paiement.",
+        });
+        setView("my-purchases");
+      }
+    }
+  }, [user]);
 
   const fetchConfigStatus = async () => {
     setLoadingConfig(true);
@@ -272,6 +344,9 @@ export default function App() {
       if (res.ok && data.statut) {
         setCheckoutModalOpen(false);
         setSelectedEbook(null); // close detail modal if open
+        if (data.token) {
+          localStorage.setItem("pending_payment_token", data.token);
+        }
         // Redirect client to MoneyFusion secure production checkout page
         window.location.href = data.url;
       } else {
@@ -473,6 +548,24 @@ export default function App() {
 
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 flex-1 w-full">
+        {successNotification && (
+          <div className="mb-8 p-4 bg-emerald-50 border border-emerald-150 rounded-2xl flex items-start gap-3 shadow-sm animate-in fade-in slide-in-from-top-4 duration-300 relative" id="payment-success-notification">
+            <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl shrink-0">
+              <CheckCircle2 className="h-5 w-5" />
+            </div>
+            <div className="space-y-1 flex-1 pr-8">
+              <h4 className="font-display font-bold text-xs sm:text-sm text-emerald-950">Confirmation de commande</h4>
+              <p className="text-xs text-emerald-800 leading-relaxed font-sans">{successNotification.message}</p>
+            </div>
+            <button
+              onClick={() => setSuccessNotification(null)}
+              className="absolute top-4 right-4 text-emerald-400 hover:text-emerald-700 font-bold text-xs"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
         {/* CATALOG VIEW */}
         {currentView === "catalog" && (
           <div className="space-y-8" id="catalog-view">
