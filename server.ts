@@ -550,6 +550,7 @@ app.get("/api/download/:ebookId", async (req, res) => {
 
     // Generate a signed URL for the private bucket "ebooks-fichiers" that expires in 60 seconds
     const bucketName = "ebooks-fichiers";
+    console.log(`[DOWNLOAD DEBUG] Génération URL signée - Bucket: "${bucketName}", Path du fichier: "${ebook.url_fichier_storage}"`);
     const { data: signedUrlData, error: storageErr } = await client.storage
       .from(bucketName)
       .createSignedUrl(ebook.url_fichier_storage, 60);

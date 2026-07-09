@@ -941,7 +941,36 @@ export default function App() {
   const handleDownloadEbook = async (ebookId: string) => {
     setDownloadingId(ebookId);
     try {
+      // Prioritize the secure backend endpoint which uses SUPABASE_SERVICE_ROLE_KEY to bypass RLS
+      let authToken = "";
+      if (supabase) {
+        const session = (await supabase.auth.getSession()).data.session;
+        authToken = session?.access_token || "";
+      }
+
+      console.log(`[DOWNLOAD] Tentative de récupération du lien via le backend pour l'ebook: ${ebookId}`);
+      const res = await fetch(`${API_BASE_URL}/api/download/${ebookId}`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const link = document.createElement("a");
+        link.href = data.url;
+        link.download = data.filename || "ebook.pdf";
+        link.target = "_blank";
+        link.referrerPolicy = "no-referrer";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        return;
+      }
+
+      // Fallback: If backend is not available or returned an error, and we have direct Supabase keys, try client-side direct access
       if (hasSupabaseKeys && supabase) {
+        console.warn("[DOWNLOAD] Échec ou indisponibilité du backend. Essai de génération directe client-side...");
         const session = (await supabase.auth.getSession()).data.session;
         if (!session?.user) {
           alert("Veuillez vous connecter pour télécharger cet ebook.");
@@ -994,33 +1023,9 @@ export default function App() {
         return;
       }
 
-      // Fallback
-      let authToken = "";
-      if (supabase) {
-        const session = (await supabase.auth.getSession()).data.session;
-        authToken = session?.access_token || "";
-      }
-
-      const res = await fetch(`${API_BASE_URL}/api/download/${ebookId}`, {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const link = document.createElement("a");
-        link.href = data.url;
-        link.download = data.filename || "ebook.pdf";
-        link.target = "_blank";
-        link.referrerPolicy = "no-referrer";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } else {
-        const errData = await res.json();
-        alert(errData.error || "Impossible de télécharger le document.");
-      }
+      // If the backend failed and we had no client-side direct fallback
+      const errData = await res.json().catch(() => ({}));
+      alert(errData.error || "Impossible de générer le lien de téléchargement sécurisé.");
     } catch (err: any) {
       alert("Erreur lors de la génération de l'URL sécurisée : " + err.message);
     } finally {
