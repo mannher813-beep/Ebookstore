@@ -20,6 +20,7 @@ export default function BioEditorView({
   const [isPublic, setIsPublic] = useState(bio.is_public || false);
   const [saving, setSaving] = useState(false);
   const [slugError, setSlugError] = useState<string | null>(null);
+  const [showPublishConfirm, setShowPublishConfirm] = useState(false);
 
   // Simple client slug sanitization to keep URLs neat
   const handleSlugChange = (val: string) => {
@@ -32,12 +33,24 @@ export default function BioEditorView({
     setSlugError(null);
   };
 
-  const handleSave = async () => {
+  const handleSave = async (forcePublicValue?: boolean) => {
     if (!supabase) return;
     if (!slug.trim()) {
       setSlugError("Le slug d'adresse ne peut pas être vide.");
       return;
     }
+
+    const activePublicValue = forcePublicValue !== undefined ? forcePublicValue : isPublic;
+    const needsConfirm = 
+      activePublicValue === true && 
+      (bio.is_public === false || bio.is_public === undefined) &&
+      forcePublicValue === undefined;
+
+    if (needsConfirm) {
+      setShowPublishConfirm(true);
+      return;
+    }
+
     setSaving(true);
     setSlugError(null);
     try {
@@ -61,7 +74,7 @@ export default function BioEditorView({
         .update({
           slug,
           content,
-          is_public: isPublic,
+          is_public: activePublicValue,
           updated_at: new Date().toISOString(),
         })
         .eq("id", bio.id)
@@ -236,6 +249,51 @@ export default function BioEditorView({
           </div>
         </div>
       </div>
+
+      {showPublishConfirm && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-6 animate-scale-in">
+            <div className="h-12 w-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center border border-indigo-100">
+              <Globe className="h-6 w-6 text-indigo-600" />
+            </div>
+            <div className="space-y-2">
+              <h4 className="font-display font-black text-lg text-slate-900 tracking-tight">
+                Confirmer la publication de la biographie
+              </h4>
+              <p className="text-sm text-slate-500 leading-relaxed">
+                Vous êtes sur le point de rendre cette biographie publique. Une fois publiée, elle sera visible par n'importe qui sur Internet et pourra être indexé par Google et par des assistants IA (Claude, ChatGPT, etc.). Confirmez-vous la publication ?
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  setShowPublishConfirm(false);
+                  handleSave(isPublic);
+                }}
+                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer text-center"
+              >
+                Oui, publier et sauvegarder
+              </button>
+              <button
+                onClick={() => {
+                  setIsPublic(false);
+                  setShowPublishConfirm(false);
+                  handleSave(false);
+                }}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer text-center"
+              >
+                Sauvegarder en mode Privé
+              </button>
+              <button
+                onClick={() => setShowPublishConfirm(false)}
+                className="w-full py-2.5 bg-white hover:bg-slate-50 text-slate-400 text-xs font-bold rounded-xl transition-all cursor-pointer text-center"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

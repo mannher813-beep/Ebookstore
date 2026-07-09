@@ -4,7 +4,7 @@ import { supabase } from "../supabaseClient";
 import TagInput from "./TagInput";
 import DynamicList from "./DynamicList";
 import { generateAndUploadPDF } from "../utils/pdfGenerator";
-import { ArrowLeft, Save, Sparkles, RefreshCw, Eye, Globe, Lock, UserCheck, Image, Briefcase, GraduationCap, Layout } from "lucide-react";
+import { ArrowLeft, Save, Sparkles, RefreshCw, Eye, Globe, Lock, UserCheck, Image, Briefcase, GraduationCap, Layout, Trash2, Upload } from "lucide-react";
 
 interface CVEditorViewProps {
   cv: CV;
@@ -28,6 +28,14 @@ export default function CVEditorView({
 
   const [saving, setSaving] = useState(false);
   const [generatingSummary, setGeneratingSummary] = useState(false);
+  const [showPublishConfirm, setShowPublishConfirm] = useState(false);
+
+  // Photo upload states
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(cv.data.photo || null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Target preview container for PDF generation
   const previewRef = useRef<HTMLDivElement>(null);
@@ -68,11 +76,96 @@ export default function CVEditorView({
     }
   };
 
-  const handleSave = async () => {
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+
+    // Validate MIME type
+    if (!file.type.startsWith("image/")) {
+      setPhotoError("Le fichier doit être une image.");
+      return;
+    }
+
+    // Validate size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setPhotoError("L'image est trop lourde (max 5 Mo).");
+      return;
+    }
+
+    setPhotoError(null);
+    setPhotoUploading(true);
+
+    // Immediate client-side preview
+    const localUrl = URL.createObjectURL(file);
+    setPhotoPreview(localUrl);
+
+    try {
+      if (!supabase) throw new Error("Supabase n'est pas initialisé.");
+
+      const sanitizedName = file.name.replace(/[^a-zA-Z0-9.]/g, "_");
+      const uniqueName = `${Date.now()}_${sanitizedName}`;
+      const path = `${cv.user_id}/${uniqueName}`;
+
+      const { error: uploadErr } = await supabase.storage
+        .from("profile-photos")
+        .upload(path, file, {
+          cacheControl: "3600",
+          upsert: true,
+        });
+
+      if (uploadErr) throw uploadErr;
+
+      const { data: publicUrlData } = supabase.storage
+        .from("profile-photos")
+        .getPublicUrl(path);
+
+      if (!publicUrlData || !publicUrlData.publicUrl) {
+        throw new Error("Impossible de récupérer l'URL publique de l'image.");
+      }
+
+      setPhoto(publicUrlData.publicUrl);
+      setPhotoPreview(publicUrlData.publicUrl);
+    } catch (err: any) {
+      console.error("Error uploading photo:", err);
+      setPhotoError("Échec de l'upload de la photo : " + err.message);
+      // Revert preview on failure
+      setPhotoPreview(photo || null);
+    } finally {
+      setPhotoUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    setPhoto("");
+    setPhotoPreview(null);
+    setPhotoError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleSave = async (forceVisibility?: "private" | "public" | "anonymous") => {
     if (!supabase) return;
+
+    // Check if we need to confirm publication
+    const activeVisibility = forceVisibility || visibility;
+    const needsConfirm = 
+      (activeVisibility === "public" || activeVisibility === "anonymous") && 
+      (cv.visibility === "private" || !cv.visibility) &&
+      !forceVisibility;
+
+    if (needsConfirm) {
+      setShowPublishConfirm(true);
+      return;
+    }
+
     setSaving(true);
     try {
-      const is_public = visibility !== "private";
+      const is_public = activeVisibility !== "private";
       const updatedData = { nom, titre, photo, competences, experiences, formation };
 
       // 1. Save data first to Supabase
@@ -81,7 +174,7 @@ export default function CVEditorView({
         .update({
           data: updatedData,
           summary,
-          visibility,
+          visibility: activeVisibility,
           is_public,
           updated_at: new Date().toISOString(),
         })
@@ -219,17 +312,72 @@ export default function CVEditorView({
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                <Image className="h-3.5 w-3.5" />
-                <span>URL de la photo de profil</span>
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                <Image className="h-3.5 w-3.5 text-slate-400" />
+                <span>Photo de profil</span>
               </label>
+              
+              <div className="flex flex-col sm:flex-row items-center gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                <div className="relative shrink-0">
+                  {photoPreview ? (
+                    <img
+                      src={photoPreview}
+                      alt="Aperçu photo"
+                      referrerPolicy="no-referrer"
+                      className="w-20 h-20 rounded-full object-cover border-2 border-indigo-100 shadow-sm"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 rounded-full bg-slate-200 border-2 border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400">
+                      <Image className="h-6 w-6" />
+                      <span className="text-[9px] mt-1 font-bold">Aucune</span>
+                    </div>
+                  )}
+                  {photoUploading && (
+                    <div className="absolute inset-0 bg-slate-900/60 rounded-full flex items-center justify-center">
+                      <RefreshCw className="h-5 w-5 text-white animate-spin" />
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex-1 space-y-1.5 text-center sm:text-left">
+                  <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={photoUploading}
+                      className="px-3.5 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+                    >
+                      <Upload className="h-3.5 w-3.5" />
+                      <span>{photoPreview ? "Remplacer" : "Choisir une photo"}</span>
+                    </button>
+                    {photoPreview && (
+                      <button
+                        type="button"
+                        onClick={handleRemovePhoto}
+                        disabled={photoUploading}
+                        className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-650 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        <span>Supprimer</span>
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-semibold">
+                    Image (Max 5 Mo). L'URL de l'image sera publique.
+                  </p>
+                  {photoError && (
+                    <p className="text-xs text-rose-600 font-bold mt-1">{photoError}</p>
+                  )}
+                </div>
+              </div>
+
               <input
-                type="text"
-                value={photo}
-                onChange={(e) => setPhoto(e.target.value)}
-                placeholder="Ex: https://images.unsplash.com/... ou URL absolue"
-                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-xs font-mono text-slate-700"
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                onChange={handlePhotoChange}
+                className="hidden"
               />
             </div>
           </section>
@@ -604,6 +752,51 @@ export default function CVEditorView({
           </div>
         </div>
       </div>
+
+      {showPublishConfirm && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-6 animate-scale-in">
+            <div className="h-12 w-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center border border-indigo-100">
+              <Globe className="h-6 w-6 text-indigo-600" />
+            </div>
+            <div className="space-y-2">
+              <h4 className="font-display font-black text-lg text-slate-900 tracking-tight">
+                Confirmer la publication du CV
+              </h4>
+              <p className="text-sm text-slate-500 leading-relaxed">
+                Vous êtes sur le point de rendre ce CV public. Une fois publié, il sera visible par n'importe qui sur Internet et pourra être indexé par Google et par des assistants IA (Claude, ChatGPT, etc.). Confirmez-vous la publication ?
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  setShowPublishConfirm(false);
+                  handleSave(visibility);
+                }}
+                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer text-center"
+              >
+                Oui, publier et sauvegarder
+              </button>
+              <button
+                onClick={() => {
+                  setVisibility("private");
+                  setShowPublishConfirm(false);
+                  handleSave("private");
+                }}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer text-center"
+              >
+                Sauvegarder en mode Privé
+              </button>
+              <button
+                onClick={() => setShowPublishConfirm(false)}
+                className="w-full py-2.5 bg-white hover:bg-slate-50 text-slate-400 text-xs font-bold rounded-xl transition-all cursor-pointer text-center"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
