@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
+import fs from "fs";
 
 dotenv.config();
 
@@ -589,7 +590,9 @@ async function startServer() {
 
     // Support client SPA routing fallback
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      const indexExist = fs.existsSync(path.join(distPath, "index.html"));
+      const fallbackFile = indexExist ? "index.html" : "app.html";
+      res.sendFile(path.join(distPath, fallbackFile));
     });
   }
 

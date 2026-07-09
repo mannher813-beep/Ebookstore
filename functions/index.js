@@ -1,11 +1,11 @@
 export async function onRequest(context) {
   const { request, env } = context;
 
-  // 1. Fetch the default index.html asset
+  // 1. Fetch the default app.html asset
   let html = "";
   try {
     const url = new URL(request.url);
-    url.pathname = "/index.html";
+    url.pathname = "/app.html";
     const assetResponse = await env.ASSETS.fetch(url);
     if (assetResponse.ok) {
       html = await assetResponse.text();
