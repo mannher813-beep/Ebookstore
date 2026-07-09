@@ -1345,7 +1345,7 @@ export default function App() {
                   <p className="text-sm text-slate-500">Aucun ebook disponible pour le moment.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 sm:gap-8">
                   {ebooks.slice(0, 3).map((ebook) => {
                     const hasPurchased = purchases.some(
                       (p) => p.ebook_id === ebook.id && p.statut === PaymentStatus.PAID
@@ -1413,7 +1413,7 @@ export default function App() {
                   <p className="text-sm text-slate-500">Aucun ebook ne correspond à votre recherche ou catégorie.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 sm:gap-8">
                   {filteredEbooks.map((ebook) => {
                     const hasPurchased = purchases.some(
                       (p) => p.ebook_id === ebook.id && p.statut === PaymentStatus.PAID
