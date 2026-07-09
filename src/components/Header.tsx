@@ -36,7 +36,7 @@ export default function Header({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         {/* Logo */}
         <div
-          onClick={() => setView("catalog")}
+          onClick={() => setView("home")}
           className="flex items-center gap-2 cursor-pointer group"
           id="nav-logo"
         >
@@ -68,6 +68,18 @@ export default function Header({
 
         {/* Nav Links */}
         <nav className="flex items-center gap-1.5 sm:gap-2">
+          <button
+            onClick={() => setView("home")}
+            className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+              currentView === "home"
+                ? "bg-slate-900 text-white shadow-sm"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+            }`}
+            id="nav-home"
+          >
+            Accueil
+          </button>
+
           <button
             onClick={() => setView("catalog")}
             className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all cursor-pointer ${

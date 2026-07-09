@@ -7,6 +7,10 @@ import AuthModal from "./components/AuthModal";
 import AdminPanel from "./components/AdminPanel";
 import PurchaseList from "./components/PurchaseList";
 import AffiliatePortal from "./components/AffiliatePortal";
+import AboutSection from "./components/AboutSection";
+import PolitiqueConfidentialite from "./components/PolitiqueConfidentialite";
+import ConditionsGenerales from "./components/ConditionsGenerales";
+import MentionsLegales from "./components/MentionsLegales";
 import { Ebook, Achat, PaymentStatus } from "./types";
 import { hasSupabaseKeys, supabase, API_BASE_URL } from "./supabaseClient";
 
@@ -24,7 +28,7 @@ function urlBase64ToUint8Array(base64String: string) {
 
 export default function App() {
   // Navigation & Views
-  const [currentView, setView] = useState<string>("catalog"); // catalog, my-purchases, admin
+  const [currentView, setView] = useState<string>("home"); // home, catalog, my-purchases, admin
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [selectedEbook, setSelectedEbook] = useState<Ebook | null>(null);
 
@@ -1283,9 +1287,9 @@ export default function App() {
           </div>
         )}
 
-        {/* CATALOG VIEW */}
-        {currentView === "catalog" && (
-          <div className="space-y-8" id="catalog-view">
+        {/* HOME VIEW */}
+        {currentView === "home" && (
+          <div className="space-y-8" id="home-view">
             {/* Hero / Banner section */}
             <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-3xl p-6 sm:p-10 shadow-xl border border-indigo-950/30 relative overflow-hidden flex flex-col sm:flex-row justify-between items-center gap-6">
               <div className="space-y-4 max-w-xl text-center sm:text-left relative z-10">
@@ -1298,6 +1302,15 @@ export default function App() {
                 <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-md">
                   Téléchargement de PDF haute-qualité sécurisé et automatisé. Payez instantanément par <strong>Orange Money, MTN MoMo, Moov ou Wave</strong>.
                 </p>
+                <div className="pt-2">
+                  <button
+                    onClick={() => setView("catalog")}
+                    className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow transition-all duration-150 inline-flex items-center gap-2 cursor-pointer"
+                  >
+                    <span>Explorer le Catalogue</span>
+                    <ShoppingBag className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
 
               {/* Vector Icon graphic on the right */}
@@ -1306,6 +1319,65 @@ export default function App() {
               </div>
             </div>
 
+            {/* Highlighted Ebooks Section */}
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-150 pb-3">
+                <div>
+                  <h3 className="font-display font-bold text-lg text-slate-900 tracking-tight">
+                    Ebooks à la une 🌟
+                  </h3>
+                  <p className="text-xs text-slate-500">Découvrez une sélection de nos meilleurs ouvrages récents</p>
+                </div>
+                <button
+                  onClick={() => setView("catalog")}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow transition-all duration-150 flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+                >
+                  Voir tout le catalogue &rarr;
+                </button>
+              </div>
+
+              {loadingEbooks ? (
+                <div className="flex flex-col items-center justify-center py-12 space-y-3">
+                  <div className="h-6 w-6 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              ) : ebooks.length === 0 ? (
+                <div className="text-center py-12 bg-white border border-slate-200 rounded-2xl">
+                  <p className="text-sm text-slate-500">Aucun ebook disponible pour le moment.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+                  {ebooks.slice(0, 3).map((ebook) => {
+                    const hasPurchased = purchases.some(
+                      (p) => p.ebook_id === ebook.id && p.statut === PaymentStatus.PAID
+                    );
+                    return (
+                      <EbookCard
+                        key={ebook.id}
+                        ebook={ebook}
+                        onSelect={setSelectedEbook}
+                        onBuy={handleOpenCheckout}
+                        hasPurchased={hasPurchased}
+                        isPurchasing={isPurchasing}
+                        user={user}
+                        onOpenAuth={() => setAuthModalOpen(true)}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* About / Presentation Section */}
+            <AboutSection 
+              onJoinAffiliate={() => setView("affiliate")} 
+              user={user} 
+            />
+          </div>
+        )}
+
+        {/* CATALOG VIEW */}
+        {currentView === "catalog" && (
+          <div className="space-y-8" id="catalog-view">
             {/* Catalog Grid */}
             <div className="space-y-6">
               <div className="flex items-center justify-between border-b border-slate-150 pb-3">
@@ -1417,14 +1489,62 @@ export default function App() {
             purchases={purchases}
           />
         )}
+
+        {/* PRIVACY POLICY VIEW */}
+        {currentView === "politique-de-confidentialite" && (
+          <PolitiqueConfidentialite setView={setView} />
+        )}
+
+        {/* CGU / CGV VIEW */}
+        {currentView === "conditions-generales" && (
+          <ConditionsGenerales setView={setView} />
+        )}
+
+        {/* MENTIONS LEGALES VIEW */}
+        {currentView === "mentions-legales" && (
+          <MentionsLegales setView={setView} />
+        )}
       </main>
 
       {/* FOOTER */}
-      <footer className="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-400 font-mono tracking-wide mt-12 shrink-0">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <span>&copy; 2026 EbookStore Africa. Tous droits réservés.</span>
-          <div className="flex gap-4">
-            <span className="flex items-center gap-1"><Shield className="h-3.5 w-3.5 text-indigo-600" /> Sécurisé par Supabase & Cloudflare</span>
+      <footer className="bg-white border-t border-slate-200 py-8 text-center text-xs text-slate-400 font-mono tracking-wide mt-12 shrink-0">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+          {/* Top of footer with legal links */}
+          <div className="flex flex-col sm:flex-row items-center justify-between border-b border-slate-100 pb-6 gap-4">
+            <div className="flex items-center gap-2">
+              <span className="font-display font-black text-slate-800 text-sm">
+                EbookStore<span className="text-indigo-600">Afrique</span>
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-x-6 gap-y-2 justify-center sm:justify-end text-[11px] font-semibold text-slate-500">
+              <button
+                onClick={() => setView("politique-de-confidentialite")}
+                className="hover:text-indigo-600 transition-colors cursor-pointer"
+              >
+                Confidentialité
+              </button>
+              <button
+                onClick={() => setView("conditions-generales")}
+                className="hover:text-indigo-600 transition-colors cursor-pointer"
+              >
+                CGU & CGV
+              </button>
+              <button
+                onClick={() => setView("mentions-legales")}
+                className="hover:text-indigo-600 transition-colors cursor-pointer"
+              >
+                Mentions Légales
+              </button>
+            </div>
+          </div>
+
+          {/* Bottom of footer with copyrights and protection */}
+          <div className="flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-400 gap-4">
+            <span>&copy; 2026 EbookStore Afrique. Tous droits réservés.</span>
+            <div className="flex items-center gap-1">
+              <Shield className="h-3.5 w-3.5 text-indigo-600" />
+              <span>Sécurisé par Supabase & Cloudflare</span>
+            </div>
           </div>
         </div>
       </footer>
