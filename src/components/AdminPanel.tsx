@@ -22,7 +22,8 @@ import {
   Send,
   RefreshCw,
   Phone,
-  ExternalLink
+  ExternalLink,
+  Clock
 } from "lucide-react";
 import { Ebook, Achat } from "../types";
 import { API_BASE_URL } from "../supabaseClient";

@@ -540,7 +540,7 @@ export default function AffiliatePortal({
           </p>
           <div className="p-4 bg-amber-50/50 border border-amber-150 rounded-xl text-xs text-amber-900 text-left space-y-1">
             <span className="block font-bold">Récapitulatif envoyé :</span>
-            <span className="block font-medium">Nom : {userAffiliate.nomComplet || userAffiliate.nom_complet}</span>
+            <span className="block font-medium">Nom : {userAffiliate.nom_complet}</span>
             <span className="block text-slate-500 line-clamp-2 mt-1">Promotion : {userAffiliate.moyen_promotion}</span>
           </div>
           <p className="text-xs text-slate-400 font-mono italic pt-2">Date de soumission : {new Date(userAffiliate.applied_at || "").toLocaleDateString()}</p>

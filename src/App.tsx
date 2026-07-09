@@ -6,6 +6,7 @@ import BookDetailModal from "./components/BookDetailModal";
 import AuthModal from "./components/AuthModal";
 import AdminPanel from "./components/AdminPanel";
 import PurchaseList from "./components/PurchaseList";
+import AffiliatePortal from "./components/AffiliatePortal";
 import { Ebook, Achat, PaymentStatus } from "./types";
 import { hasSupabaseKeys, supabase, API_BASE_URL } from "./supabaseClient";
 
@@ -1114,6 +1115,7 @@ export default function App() {
         setView={setView}
         user={user}
         role={role}
+        userAffiliate={userAffiliate}
         onLogout={handleLogout}
         onOpenAuth={() => setAuthModalOpen(true)}
         searchTerm={searchTerm}
@@ -1301,6 +1303,16 @@ export default function App() {
               </button>
             </div>
           )
+        )}
+
+        {/* AFFILIATE PORTAL VIEW */}
+        {currentView === "affiliate" && (
+          <AffiliatePortal
+            user={user}
+            userAffiliate={userAffiliate}
+            onRefreshAffiliate={fetchUserAffiliate}
+            onOpenAuth={() => setAuthModalOpen(true)}
+          />
         )}
       </main>
 
