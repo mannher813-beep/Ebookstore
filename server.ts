@@ -5,8 +5,30 @@ import { createServer as createViteServer } from "vite";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import fs from "fs";
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
+
+let aiClient: GoogleGenAI | null = null;
+
+function getGoogleGenAI(): GoogleGenAI {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Configuration manquante : GEMINI_API_KEY n'est pas définie dans l'environnement.");
+  }
+  if (!aiClient) {
+    aiClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+  }
+  return aiClient;
+}
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -570,6 +592,68 @@ app.get("/api/download/:ebookId", async (req, res) => {
     return res.status(500).json({ error: "Une erreur est survenue lors de la signature : " + err.message });
   }
 });
+
+// 6. Génération de résumé de CV par IA (Gemini 3.5 Flash)
+app.post("/api/cv/generate-summary", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: "Veuillez vous connecter pour générer un résumé." });
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+  const { data } = req.body;
+
+  if (!data) {
+    return res.status(400).json({ error: "Les données du CV sont manquantes." });
+  }
+
+  try {
+    const supabase = getSupabase();
+    const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+    if (authErr || !user) {
+      return res.status(401).json({ error: "Session expirée ou invalide. Veuillez vous reconnecter." });
+    }
+
+    const { nom, titre, competences, experiences, formation } = data;
+    
+    const prompt = `Tu es un expert en recrutement et en rédaction de CV professionnels de haut niveau pour le marché de l'emploi technologique en Afrique.
+Ta mission est de rédiger un résumé ou une accroche professionnelle percutante, inspirante et de qualité supérieure pour le CV suivant.
+
+Informations du candidat :
+- Nom : ${nom || "Non spécifié"}
+- Titre professionnel visé : ${titre || "Développeur / Professionnel de la Tech"}
+
+Compétences clés :
+${competences && competences.length > 0 ? competences.join(", ") : "Non spécifiées"}
+
+Expériences professionnelles :
+${experiences && experiences.length > 0 ? experiences.map((exp: any) => `- ${exp.poste} chez ${exp.entreprise} (${exp.date_debut} à ${exp.date_fin}) : ${exp.description}`).join("\n") : "Non spécifiées"}
+
+Formations et diplômes :
+${formation && formation.length > 0 ? formation.map((form: any) => `- ${form.diplome} à ${form.ecole} (Année: ${form.annee})`).join("\n") : "Non spécifiées"}
+
+Directives strictes :
+1. Rédige un paragraphe unique, fluide et captivant (environ 3 à 4 phrases, maximum 150 mots).
+2. Adopte un ton professionnel, dynamique et confiant qui valorise l'expertise locale et le potentiel du candidat.
+3. Mets en avant la synergie entre les compétences techniques et l'expérience pratique.
+4. Rédige exclusivement en français.
+5. Ne mets aucun titre, aucune introduction (comme "Voici le résumé :"), aucun commentaire ou métadonnée. Donne UNIQUEMENT le texte final rédigé.
+`;
+
+    const ai = getGoogleGenAI();
+    const aiResponse = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+    });
+
+    const summary = aiResponse.text?.trim() || "";
+    return res.json({ summary });
+  } catch (err: any) {
+    console.error("Gemini summary generation error:", err);
+    return res.status(500).json({ error: "Échec de la génération du résumé par l'IA : " + err.message });
+  }
+});
+
 
 
 // ==========================================

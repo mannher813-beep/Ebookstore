@@ -109,3 +109,50 @@ export interface MoneyFusionWebhookPayload {
   webhook_url?: string;
   createdAt: string;
 }
+
+export interface Experience {
+  entreprise: string;
+  poste: string;
+  date_debut: string;
+  date_fin: string;
+  description: string;
+}
+
+export interface Formation {
+  ecole: string;
+  diplome: string;
+  annee: string;
+}
+
+export interface CVData {
+  nom: string;
+  titre: string;
+  photo: string;
+  competences: string[];
+  experiences: Experience[];
+  formation: Formation[];
+}
+
+export interface CV {
+  id: string;
+  user_id: string;
+  reference: string;
+  data: CVData;
+  summary: string;
+  pdf_url: string;
+  is_public: boolean;
+  visibility: 'private' | 'public' | 'anonymous';
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface Bio {
+  id: string;
+  user_id: string;
+  slug: string;
+  content: string;
+  is_public: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+

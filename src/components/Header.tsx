@@ -127,6 +127,19 @@ export default function Header({
               </button>
 
               <button
+                onClick={() => handleSetView("dashboard")}
+                className={`px-3 py-1.5 rounded-lg text-xs lg:text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  currentView === "dashboard" || currentView === "cv-editor" || currentView === "bio-editor" || currentView === "install-connector"
+                    ? "bg-indigo-650 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                }`}
+                id="nav-cv-dashboard"
+              >
+                <User className="h-4 w-4 text-indigo-500 group-hover:text-white" />
+                <span>Mon Espace CV</span>
+              </button>
+
+              <button
                 onClick={() => handleSetView("affiliate")}
                 className={`px-3 py-1.5 rounded-lg text-xs lg:text-sm font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
                   currentView === "affiliate"
@@ -271,6 +284,18 @@ export default function Header({
                   >
                     <BookMarked className="h-4 w-4 text-indigo-500" />
                     <span>Mes Achats</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleSetView("dashboard")}
+                    className={`w-full px-4 py-2.5 rounded-xl text-left text-sm font-semibold transition-all flex items-center gap-2.5 ${
+                      currentView === "dashboard" || currentView === "cv-editor" || currentView === "bio-editor" || currentView === "install-connector"
+                        ? "bg-slate-950 text-white shadow-sm"
+                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    }`}
+                  >
+                    <User className="h-4 w-4 text-indigo-500" />
+                    <span>Mon Espace CV</span>
                   </button>
 
                   <button

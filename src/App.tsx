@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { CreditCard, Phone, Shield, ShoppingBag, X, AlertTriangle, RefreshCw, KeyRound, CheckCircle2, Download } from "lucide-react";
+import { CreditCard, Phone, Shield, ShoppingBag, X, AlertTriangle, RefreshCw, KeyRound, CheckCircle2, Download, User } from "lucide-react";
 import Header from "./components/Header";
 import EbookCard from "./components/EbookCard";
 import BookDetailModal from "./components/BookDetailModal";
@@ -11,8 +11,16 @@ import AboutSection from "./components/AboutSection";
 import PolitiqueConfidentialite from "./components/PolitiqueConfidentialite";
 import ConditionsGenerales from "./components/ConditionsGenerales";
 import MentionsLegales from "./components/MentionsLegales";
-import { Ebook, Achat, PaymentStatus } from "./types";
+import { Ebook, Achat, PaymentStatus, CV, Bio } from "./types";
 import { hasSupabaseKeys, supabase, API_BASE_URL } from "./supabaseClient";
+
+// New feature view imports
+import DashboardView from "./components/DashboardView";
+import CVEditorView from "./components/CVEditorView";
+import BioEditorView from "./components/BioEditorView";
+import CVPublicView from "./components/CVPublicView";
+import BioPublicView from "./components/BioPublicView";
+import InstallConnectorView from "./components/InstallConnectorView";
 
 // Helper to convert VAPID public key to Uint8Array for Push API subscription
 function urlBase64ToUint8Array(base64String: string) {
@@ -31,6 +39,10 @@ export default function App() {
   const [currentView, setView] = useState<string>("home"); // home, catalog, my-purchases, admin
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [selectedEbook, setSelectedEbook] = useState<Ebook | null>(null);
+
+  // CV & Bio Edit States
+  const [activeCV, setActiveCV] = useState<CV | null>(null);
+  const [activeBio, setActiveBio] = useState<Bio | null>(null);
 
   // Users & Auth States
   const [user, setUser] = useState<{ id: string; email: string } | null>(null);
@@ -468,6 +480,59 @@ export default function App() {
       }
     }
   }, [selectedEbook]);
+
+  // 4b. Router-like deep linking for CV, Bio, Dashboard and Connector paths
+  useEffect(() => {
+    const handleInitialPath = () => {
+      const path = window.location.pathname;
+      if (path.startsWith("/cv/")) {
+        const reference = path.substring(4);
+        if (reference) {
+          setView(`cv-view:${reference}`);
+        }
+      } else if (path.startsWith("/bio/")) {
+        const slug = path.substring(5);
+        if (slug) {
+          setView(`bio-view:${slug}`);
+        }
+      } else if (path === "/dashboard") {
+        setView("dashboard");
+      } else if (path === "/install-connector") {
+        setView("install-connector");
+      }
+    };
+
+    handleInitialPath();
+
+    const handlePopState = () => {
+      handleInitialPath();
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  // Synchronize browser URL bar with currentView changes
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (currentView === "dashboard" && path !== "/dashboard") {
+      window.history.pushState(null, "", "/dashboard");
+    } else if (currentView === "install-connector" && path !== "/install-connector") {
+      window.history.pushState(null, "", "/install-connector");
+    } else if (currentView.startsWith("cv-view:")) {
+      const ref = currentView.split(":")[1];
+      if (ref && path !== `/cv/${ref}`) {
+        window.history.pushState(null, "", `/cv/${ref}`);
+      }
+    } else if (currentView.startsWith("bio-view:")) {
+      const slug = currentView.split(":")[1];
+      if (slug && path !== `/bio/${slug}`) {
+        window.history.pushState(null, "", `/bio/${slug}`);
+      }
+    } else if (currentView === "home" && path !== "/" && !path.startsWith("/ebook/")) {
+      window.history.pushState(null, "", "/");
+    }
+  }, [currentView]);
 
   const fetchConfigStatus = async () => {
     setLoadingConfig(true);
@@ -1456,6 +1521,85 @@ export default function App() {
         {/* MENTIONS LEGALES VIEW */}
         {currentView === "mentions-legales" && (
           <MentionsLegales setView={setView} />
+        )}
+
+        {/* NEW FEATURE VIEWS: CV, BIO, DASHBOARD, CONNECTOR */}
+        {currentView === "dashboard" && (
+          user ? (
+            <DashboardView
+              user={user}
+              setView={setView}
+              onEditCV={(cv) => {
+                setActiveCV(cv);
+                setView("cv-editor");
+              }}
+              onEditBio={(bio) => {
+                setActiveBio(bio);
+                setView("bio-editor");
+              }}
+            />
+          ) : (
+            <div className="bg-white border border-slate-200 rounded-3xl p-8 max-w-lg mx-auto text-center space-y-6 shadow-sm my-12">
+              <div className="h-14 w-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto border border-indigo-100">
+                <User className="h-8 w-8 text-indigo-600" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="font-display font-black text-xl text-slate-900 tracking-tight">Espace Connexion Requis</h3>
+                <p className="text-sm text-slate-500 leading-relaxed">
+                  Veuillez vous connecter à votre compte EbookStore pour gérer vos CV, générer des biographies professionnelles et télécharger vos documents PDF.
+                </p>
+              </div>
+              <button
+                onClick={() => setAuthModalOpen(true)}
+                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all cursor-pointer shadow-sm"
+              >
+                Se connecter / S'inscrire
+              </button>
+            </div>
+          )
+        )}
+
+        {currentView === "cv-editor" && activeCV && (
+          <CVEditorView
+            cv={activeCV}
+            onBack={() => setView("dashboard")}
+            onSave={(updated) => {
+              setActiveCV(updated);
+              setView("dashboard");
+            }}
+          />
+        )}
+
+        {currentView === "bio-editor" && activeBio && (
+          <BioEditorView
+            bio={activeBio}
+            onBack={() => setView("dashboard")}
+            onSave={(updated) => {
+              setActiveBio(updated);
+              setView("dashboard");
+            }}
+          />
+        )}
+
+        {currentView.startsWith("cv-view:") && (
+          <CVPublicView
+            reference={currentView.split(":")[1]}
+            onBack={user ? () => setView("dashboard") : undefined}
+          />
+        )}
+
+        {currentView.startsWith("bio-view:") && (
+          <BioPublicView
+            slug={currentView.split(":")[1]}
+            onBack={user ? () => setView("dashboard") : undefined}
+          />
+        )}
+
+        {currentView === "install-connector" && (
+          <InstallConnectorView
+            user={user}
+            onBack={() => setView("dashboard")}
+          />
         )}
       </main>
 
