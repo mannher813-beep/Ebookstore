@@ -71,11 +71,47 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
   const [motifRefusText, setMotifRefusText] = useState<{ [key: string]: string }>({});
   const [showRefusInput, setShowRefusInput] = useState<{ [key: string]: boolean }>({});
 
+  const [adminPayoutRequests, setAdminPayoutRequests] = useState<any[]>([]);
+  const [loadingAdminPayouts, setLoadingAdminPayouts] = useState(false);
+
+  const fetchPayoutRequestsAdmin = async () => {
+    try {
+      const { supabase } = await import("../supabaseClient");
+      if (!supabase) return;
+      setLoadingAdminPayouts(true);
+      const { data, error } = await supabase
+        .from("commission_payout_requests")
+        .select(`
+          id,
+          affiliate_id,
+          montant,
+          telephone_paiement,
+          statut,
+          requested_at,
+          processed_at
+        `)
+        .order("requested_at", { ascending: false });
+
+      if (error) throw error;
+
+      if (data) {
+        setAdminPayoutRequests(data);
+      }
+    } catch (e) {
+      console.error("Error loading payout requests in admin:", e);
+    } finally {
+      setLoadingAdminPayouts(false);
+    }
+  };
+
   const fetchAffiliatesData = async () => {
     try {
       const { supabase, hasSupabaseKeys } = await import("../supabaseClient");
       if (!hasSupabaseKeys || !supabase) return;
       setLoadingAffiliates(true);
+
+      // Fetch payout requests too
+      fetchPayoutRequestsAdmin();
 
       const { data: affList, error: affErr } = await supabase
         .from("affiliates")
@@ -165,6 +201,33 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
       const { supabase } = await import("../supabaseClient");
       if (!supabase) return;
 
+      // 1. Fetch affiliate to get user_id and nom_complet
+      const { data: aff, error: affErr } = await supabase
+        .from("affiliates")
+        .select("user_id, nom_complet")
+        .eq("id", id)
+        .single();
+
+      if (affErr) throw affErr;
+      if (!aff) throw new Error("Affilié introuvable");
+
+      // 2. Query achats where user_id is the user's ID, statut is paid and montant > 0
+      const { data: userPurchases, error: purchaseErr } = await supabase
+        .from("achats")
+        .select("id, montant, statut")
+        .eq("user_id", aff.user_id)
+        .eq("statut", "paid")
+        .gt("montant", 0);
+
+      if (purchaseErr) throw purchaseErr;
+
+      if (!userPurchases || userPurchases.length === 0) {
+        alert(
+          `Approbation impossible : L'utilisateur ${aff.nom_complet} n'a effectué aucun achat payé. Un achat avec montant supérieur à 0 FCFA est requis pour approuver un affilié (les ebooks gratuits ne comptent pas).`
+        );
+        return;
+      }
+
       const { error } = await supabase
         .from("affiliates")
         .update({
@@ -175,8 +238,85 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
 
       if (error) throw error;
       await fetchAffiliatesData();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error approving affiliate:", err);
+      alert(`Erreur lors de l'approbation : ${err.message}`);
+    }
+  };
+
+  const handleMarkPayoutAsPaid = async (requestId: string) => {
+    try {
+      const { supabase } = await import("../supabaseClient");
+      if (!supabase) return;
+
+      const confirmPay = window.confirm("Confirmez-vous le versement de ce paiement ? Les commissions associées passeront définitivement au statut 'payé'.");
+      if (!confirmPay) return;
+
+      // 1. Update status of the payout request to 'paid'
+      const { error: requestErr } = await supabase
+        .from("commission_payout_requests")
+        .update({
+          statut: "paid",
+          processed_at: new Date().toISOString()
+        })
+        .eq("id", requestId);
+
+      if (requestErr) throw requestErr;
+
+      // 2. Update all associated commissions to 'paid'
+      const { error: commissionErr } = await supabase
+        .from("affiliate_commissions")
+        .update({
+          statut: "paid"
+        })
+        .eq("payout_request_id", requestId);
+
+      if (commissionErr) throw commissionErr;
+
+      alert("Demande de paiement validée et marquée comme payée avec succès !");
+      await fetchPayoutRequestsAdmin();
+      await fetchAffiliatesData();
+    } catch (err: any) {
+      console.error("Error processing payout request payment:", err);
+      alert(`Erreur lors de la validation du paiement : ${err.message}`);
+    }
+  };
+
+  const handleRejectPayoutRequest = async (requestId: string) => {
+    try {
+      const { supabase } = await import("../supabaseClient");
+      if (!supabase) return;
+
+      const confirmReject = window.confirm("Voulez-vous rejeter cette demande de paiement ? Les commissions associées redeviennent réclamables (leur payout_request_id repassera à NULL).");
+      if (!confirmReject) return;
+
+      // 1. Update request status to 'rejected'
+      const { error: requestErr } = await supabase
+        .from("commission_payout_requests")
+        .update({
+          statut: "rejected",
+          processed_at: new Date().toISOString()
+        })
+        .eq("id", requestId);
+
+      if (requestErr) throw requestErr;
+
+      // 2. Reset payout_request_id in commissions so they become claimable again
+      const { error: commissionErr } = await supabase
+        .from("affiliate_commissions")
+        .update({
+          payout_request_id: null
+        })
+        .eq("payout_request_id", requestId);
+
+      if (commissionErr) throw commissionErr;
+
+      alert("Demande de paiement rejetée avec succès.");
+      await fetchPayoutRequestsAdmin();
+      await fetchAffiliatesData();
+    } catch (err: any) {
+      console.error("Error rejecting payout request:", err);
+      alert(`Erreur lors du rejet : ${err.message}`);
     }
   };
 
@@ -381,7 +521,7 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
     setSuccess(false);
     setLoading(true);
 
-    if (!titre || !description || !prix || !urlCouverture || !urlFichier || !categorie) {
+    if (!titre || !description || prix === "" || !urlCouverture || !urlFichier || !categorie) {
       setError("Veuillez remplir tous les champs requis et téléverser les fichiers.");
       setLoading(false);
       return;
@@ -390,8 +530,8 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
     // Clean and validate the price (numeric)
     const cleanedPrix = prix.toString().replace(/,/g, ".").replace(/\s/g, "");
     const parsedPrix = Number(cleanedPrix);
-    if (isNaN(parsedPrix) || parsedPrix <= 0) {
-      setError("Le prix saisi n'est pas un nombre valide. Veuillez entrer uniquement des chiffres (ex : 5000 ou 49.99).");
+    if (isNaN(parsedPrix) || parsedPrix < 0) {
+      setError("Le prix saisi n'est pas un nombre valide. Veuillez entrer uniquement des chiffres (ex : 5000, 0 ou 49.99).");
       setLoading(false);
       return;
     }
@@ -1012,6 +1152,106 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* Section: Commission Payout Requests Claims */}
+          <div className="bg-white rounded-2xl border border-indigo-200 shadow-sm p-6 sm:p-8 space-y-4">
+            <h3 className="font-display font-bold text-base text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-4">
+              <Coins className="h-5 w-5 text-indigo-600" /> Demandes de Retrait de Commissions ({
+                adminPayoutRequests.length
+              })
+            </h3>
+
+            {loadingAdminPayouts ? (
+              <p className="text-xs text-slate-500 text-center py-6 flex items-center justify-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin text-indigo-600" /> Chargement des demandes de retrait...
+              </p>
+            ) : adminPayoutRequests.length === 0 ? (
+              <p className="text-xs text-slate-500 text-center py-6 bg-slate-50 border border-slate-100 rounded-xl">
+                Aucune demande de retrait de commissions pour l'instant.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-400 font-mono font-bold uppercase tracking-wider">
+                      <th className="py-3 px-4">Affilié / Code unique</th>
+                      <th className="py-3 px-4">Date Demande</th>
+                      <th className="py-3 px-4 text-right">Montant</th>
+                      <th className="py-3 px-4">Téléphone Mobile Money</th>
+                      <th className="py-3 px-4 text-center">Statut</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {adminPayoutRequests.map((req) => {
+                      // Find the affiliate object to get human name/code
+                      const matchedAff = affiliates.find(a => a.id === req.affiliate_id);
+                      const affiliateName = matchedAff ? matchedAff.nom_complet : "Affilié Inconnu";
+                      const referralCode = matchedAff ? matchedAff.referral_code : "-";
+
+                      return (
+                        <tr key={req.id} className="hover:bg-slate-50/75 transition-colors">
+                          <td className="py-3 px-4">
+                            <span className="font-bold text-slate-900 block">{affiliateName}</span>
+                            <span className="text-[10px] text-slate-400 font-mono">Code: {referralCode}</span>
+                          </td>
+                          <td className="py-3 px-4 text-slate-550 font-mono">
+                            {new Date(req.requested_at).toLocaleString()}
+                          </td>
+                          <td className="py-3 px-4 text-right font-black text-indigo-600 font-mono text-sm">
+                            {req.montant.toLocaleString()} FCFA
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="font-mono text-slate-700 font-bold bg-slate-100 px-2 py-0.5 border border-slate-200 rounded">
+                              {req.telephone_paiement}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {req.statut === "paid" ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase tracking-wider">
+                                <CheckCircle className="h-3 w-3" /> Payé
+                              </span>
+                            ) : req.statut === "rejected" ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold bg-rose-50 text-rose-700 border border-rose-100 uppercase tracking-wider">
+                                <X className="h-3 w-3" /> Rejeté
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold bg-amber-50 text-amber-700 border border-amber-100 uppercase tracking-wider animate-pulse">
+                                <Clock className="h-3 w-3 animate-spin" /> En attente
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            {req.statut === "pending" && (
+                              <div className="flex gap-2 justify-end">
+                                <button
+                                  onClick={() => handleRejectPayoutRequest(req.id)}
+                                  className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[10px] font-bold cursor-pointer transition-colors"
+                                >
+                                  Rejeter
+                                </button>
+                                <button
+                                  onClick={() => handleMarkPayoutAsPaid(req.id)}
+                                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold cursor-pointer transition-colors shadow-sm"
+                                >
+                                  Marquer comme payé
+                                </button>
+                              </div>
+                            )}
+                            {req.statut !== "pending" && (
+                              <span className="text-[10px] text-slate-400 font-mono italic">
+                                Traitée le {req.processed_at ? new Date(req.processed_at).toLocaleDateString() : "-"}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

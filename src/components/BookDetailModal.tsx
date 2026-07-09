@@ -153,9 +153,15 @@ export default function BookDetailModal({
               <div className="flex items-center justify-between">
                 <div>
                   <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider font-mono block">Tarif de l'oeuvre</span>
-                  <span className="font-display font-black text-xl sm:text-2xl text-slate-900">
-                    {ebook.prix.toLocaleString()} <span className="text-sm text-indigo-500 font-bold font-mono">FCFA</span>
-                  </span>
+                  {ebook.prix === 0 ? (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase tracking-wider font-mono mt-1">
+                      GRATUIT
+                    </span>
+                  ) : (
+                    <span className="font-display font-black text-xl sm:text-2xl text-slate-900">
+                      {ebook.prix.toLocaleString()} <span className="text-sm text-indigo-500 font-bold font-mono">FCFA</span>
+                    </span>
+                  )}
                 </div>
 
                 <span className="text-[11px] text-slate-400 font-mono flex items-center gap-1.5 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100">
@@ -203,12 +209,22 @@ export default function BookDetailModal({
                       }
                     }}
                     disabled={isPurchasing}
-                    className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-slate-100 disabled:text-slate-400 text-xs sm:text-sm font-black rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md hover:shadow-lg active:scale-95"
+                    className={`flex-1 py-3 text-white disabled:bg-slate-100 disabled:text-slate-400 text-xs sm:text-sm font-black rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md hover:shadow-lg active:scale-95 ${
+                      ebook.prix === 0 
+                        ? "bg-emerald-600 hover:bg-emerald-700" 
+                        : "bg-indigo-600 hover:bg-indigo-700"
+                    }`}
                   >
-                    <CreditCard className="h-4.5 w-4.5" />
+                    {ebook.prix === 0 ? (
+                      <Download className="h-4.5 w-4.5" />
+                    ) : (
+                      <CreditCard className="h-4.5 w-4.5" />
+                    )}
                     <span>
                       {isPurchasing
-                        ? "Initialisation de la transaction..."
+                        ? "Initialisation..."
+                        : ebook.prix === 0
+                        ? "Télécharger gratuitement"
                         : `Acheter via Mobile Money (${ebook.prix.toLocaleString()} FCFA)`}
                     </span>
                   </button>
@@ -233,12 +249,18 @@ export default function BookDetailModal({
 
       {/* Mobile Floating Sticky CTA */}
       {!hasPurchased && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-4 z-40 shadow-[0_-8px_30px_rgb(0,0,0,0.12)] flex items-center justify-between gap-4 animate-in slide-in-from-bottom duration-300">
+        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-4 z-40 shadow-[0_-8px_30px_rgb(0,0,0,0.12)] flex items-center justify-between gap-4 animate-in slide-in-from-bottom duration-300 font-sans">
           <div className="text-left">
             <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider font-mono block">Tarif unique</span>
-            <span className="font-display font-black text-lg text-slate-950">
-              {ebook.prix.toLocaleString()} <span className="text-xs text-indigo-500 font-bold font-mono">FCFA</span>
-            </span>
+            {ebook.prix === 0 ? (
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase tracking-wider font-mono mt-1">
+                GRATUIT
+              </span>
+            ) : (
+              <span className="font-display font-black text-lg text-slate-950">
+                {ebook.prix.toLocaleString()} <span className="text-xs text-indigo-500 font-bold font-mono">FCFA</span>
+              </span>
+            )}
           </div>
           <button
             onClick={() => {
@@ -249,11 +271,19 @@ export default function BookDetailModal({
               }
             }}
             disabled={isPurchasing}
-            className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-slate-100 disabled:text-slate-400 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md active:scale-95 duration-200 animate-pulse"
-            style={{ animationDuration: "3s" }}
+            className={`flex-1 py-3 text-white disabled:bg-slate-100 disabled:text-slate-400 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md active:scale-95 duration-200 ${
+              ebook.prix === 0 
+                ? "bg-emerald-600 hover:bg-emerald-700" 
+                : "bg-indigo-600 hover:bg-indigo-700 animate-pulse"
+            }`}
+            style={ebook.prix !== 0 ? { animationDuration: "3s" } : undefined}
           >
-            <CreditCard className="h-4 w-4" />
-            <span>{isPurchasing ? "Traitement..." : "Acheter maintenant"}</span>
+            {ebook.prix === 0 ? (
+              <Download className="h-4 w-4" />
+            ) : (
+              <CreditCard className="h-4 w-4" />
+            )}
+            <span>{isPurchasing ? "Traitement..." : ebook.prix === 0 ? "Télécharger" : "Acheter maintenant"}</span>
           </button>
         </div>
       )}

@@ -7,7 +7,9 @@ import {
 import { 
   Affiliate, 
   AffiliateCommission, 
-  AffiliateMessage 
+  AffiliateMessage,
+  Ebook,
+  Achat
 } from "../types";
 import { 
   Coins, 
@@ -37,6 +39,8 @@ interface AffiliatePortalProps {
   userAffiliate: Affiliate | null;
   onRefreshAffiliate: (userId: string) => Promise<void>;
   onOpenAuth: () => void;
+  ebooks: Ebook[];
+  purchases: Achat[];
 }
 
 export default function AffiliatePortal({
@@ -44,6 +48,8 @@ export default function AffiliatePortal({
   userAffiliate,
   onRefreshAffiliate,
   onOpenAuth,
+  ebooks,
+  purchases,
 }: AffiliatePortalProps) {
   // Navigation / onboarding local view
   const [loading, setLoading] = useState(false);
@@ -60,12 +66,23 @@ export default function AffiliatePortal({
   const [stats, setStats] = useState({
     clics: 0,
     conversions: 0,
-    gainsPending: 0,
+    gainsClaimable: 0,
+    gainsPendingClaim: 0,
     gainsPaid: 0,
     filleulsCount: 0,
     tauxConversion: 0,
   });
   const [loadingStats, setLoadingStats] = useState(false);
+
+  // Payout states
+  const [payoutRequests, setPayoutRequests] = useState<any[]>([]);
+  const [loadingPayouts, setLoadingPayouts] = useState(false);
+  const [payoutPhone, setPayoutPhone] = useState("");
+  const [showPayoutModal, setShowPayoutModal] = useState(false);
+  const [submittingPayout, setSubmittingPayout] = useState(false);
+  const [payoutSuccess, setPayoutSuccess] = useState(false);
+  const [payoutError, setPayoutError] = useState<string | null>(null);
+  const [copiedEbookId, setCopiedEbookId] = useState<string | null>(null);
 
   // Message states
   const [messages, setMessages] = useState<AffiliateMessage[]>([]);
@@ -110,6 +127,26 @@ export default function AffiliatePortal({
     }
   }, [messages]);
 
+  const fetchPayoutRequests = async () => {
+    if (!userAffiliate || !supabase) return;
+    setLoadingPayouts(true);
+    try {
+      const { data, error } = await supabase
+        .from("commission_payout_requests")
+        .select("*")
+        .eq("affiliate_id", userAffiliate.id)
+        .order("requested_at", { ascending: false });
+
+      if (!error && data) {
+        setPayoutRequests(data);
+      }
+    } catch (err) {
+      console.error("Error fetching payout requests:", err);
+    } finally {
+      setLoadingPayouts(false);
+    }
+  };
+
   const fetchDashboardStats = async () => {
     if (!userAffiliate || !supabase) return;
     setLoadingStats(true);
@@ -130,17 +167,20 @@ export default function AffiliatePortal({
       // 3. Commissions (parrain ou direct)
       const { data: commissions } = await supabase
         .from("affiliate_commissions")
-        .select("montant, statut")
+        .select("montant, statut, payout_request_id")
         .eq("affiliate_id", userAffiliate.id);
 
-      let pendingSum = 0;
+      let claimableSum = 0;
+      let pendingClaimSum = 0;
       let paidSum = 0;
       if (commissions) {
         commissions.forEach((comm) => {
           if (comm.statut === "paid") {
             paidSum += Number(comm.montant);
+          } else if (comm.payout_request_id === null) {
+            claimableSum += Number(comm.montant);
           } else {
-            pendingSum += Number(comm.montant);
+            pendingClaimSum += Number(comm.montant);
           }
         });
       }
@@ -158,11 +198,15 @@ export default function AffiliatePortal({
       setStats({
         clics,
         conversions,
-        gainsPending: pendingSum,
+        gainsClaimable: claimableSum,
+        gainsPendingClaim: pendingClaimSum,
         gainsPaid: paidSum,
         filleulsCount: filleulsCount || 0,
         tauxConversion: tx,
       });
+
+      // Also fetch payout requests history
+      fetchPayoutRequests();
     } catch (err) {
       console.error("Error loading dashboard stats:", err);
     } finally {
@@ -339,6 +383,16 @@ export default function AffiliatePortal({
     }
   };
 
+  const handleCopyLink = async (text: string, ebookId: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedEbookId(ebookId);
+      setTimeout(() => setCopiedEbookId(null), 2000);
+    } catch (err) {
+      console.error("Could not copy ebook link:", err);
+    }
+  };
+
   const shareLink = async (title: string, text: string, url: string) => {
     if (navigator.share) {
       try {
@@ -354,6 +408,64 @@ export default function AffiliatePortal({
       // Fallback: Copy to clipboard
       await navigator.clipboard.writeText(url);
       alert("Lien copié dans le presse-papiers !");
+    }
+  };
+
+  const handleSubmitPayoutRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!supabase || !userAffiliate || stats.gainsClaimable <= 0) return;
+    if (!payoutPhone.trim()) {
+      setPayoutError("Veuillez saisir un numéro de téléphone mobile money.");
+      return;
+    }
+
+    setSubmittingPayout(true);
+    setPayoutError(null);
+    setPayoutSuccess(false);
+
+    try {
+      // 1. Create a row in commission_payout_requests
+      const { data: requestData, error: requestErr } = await supabase
+        .from("commission_payout_requests")
+        .insert({
+          affiliate_id: userAffiliate.id,
+          montant: stats.gainsClaimable,
+          telephone_paiement: payoutPhone.trim(),
+          statut: "pending",
+          requested_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (requestErr) throw requestErr;
+
+      // 2. Update associated pending commissions
+      const { error: updateErr } = await supabase
+        .from("affiliate_commissions")
+        .update({
+          payout_request_id: requestData.id
+        })
+        .eq("affiliate_id", userAffiliate.id)
+        .eq("statut", "pending")
+        .is("payout_request_id", null);
+
+      if (updateErr) {
+        console.error("Error linking commissions to payout request:", updateErr);
+        throw updateErr;
+      }
+
+      setPayoutSuccess(true);
+      setPayoutPhone("");
+      await fetchDashboardStats();
+      setTimeout(() => {
+        setShowPayoutModal(false);
+        setPayoutSuccess(false);
+      }, 3000);
+    } catch (err: any) {
+      console.error("Error submitting payout request:", err);
+      setPayoutError(err.message || "Une erreur est survenue lors de la soumission de votre demande.");
+    } finally {
+      setSubmittingPayout(false);
     }
   };
 
@@ -428,6 +540,17 @@ export default function AffiliatePortal({
             )}
           </div>
 
+          {/* Informational Warning on Required Paid Purchase */}
+          {!purchases.some((p) => p.statut === "paid" && p.montant > 0) && (
+            <div className="p-4 bg-amber-50 border border-amber-150 rounded-2xl flex items-start gap-3 text-amber-800 mb-6 text-xs">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 animate-pulse" />
+              <div>
+                <strong className="block font-bold mb-0.5">Information importante :</strong>
+                Vous devez avoir effectué au moins un achat payant avant que votre candidature ne puisse être validée par l'administrateur (les ebooks gratuits ne sont pas éligibles).
+              </div>
+            </div>
+          )}
+
           {/* Error and Success alerts */}
           {errorMsg && (
             <div className="p-4 bg-red-50 border border-red-150 rounded-2xl flex items-start gap-3 text-red-800 mb-6 text-xs">
@@ -453,7 +576,7 @@ export default function AffiliatePortal({
                   <input
                     type="text"
                     required
-                    placeholder="Ex: Paul Biya"
+                    placeholder="Ex: Jean Dupont"
                     value={nomComplet}
                     onChange={(e) => setNomComplet(e.target.value)}
                     className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-250 rounded-xl text-sm focus:outline-none focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-slate-800"
@@ -662,79 +785,65 @@ export default function AffiliatePortal({
         </button>
       </div>
 
-      {/* Referral & Recruitment Links */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Link 1: Sales Link */}
-        <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100">
-              <TrendingUp className="h-5 w-5" />
-            </div>
-            <div>
-              <h3 className="font-display font-bold text-sm text-slate-900 leading-none">Votre lien d'affiliation d'ebooks</h3>
-              <p className="text-[10px] text-slate-400 mt-1">Partagez ce lien. Gagnez <strong>20% de commission</strong> sur chaque achat direct validé.</p>
-            </div>
-          </div>
-
-          <div className="flex gap-2 items-center">
-            <input
-              type="text"
-              readOnly
-              value={affiliateUrl}
-              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-600 font-mono focus:outline-none focus:ring-0"
-            />
-            <button
-              onClick={() => copyToClipboard(affiliateUrl, "ref")}
-              className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer transition-colors shrink-0"
-              title="Copier le lien"
-            >
-              {copiedLink === "ref" ? <Check className="h-4.5 w-4.5 text-emerald-600" /> : <Copy className="h-4.5 w-4.5" />}
-            </button>
-            <button
-              onClick={() => shareLink("Acheter des Ebooks", "Découvrez les meilleurs ebooks de développement en Afrique !", affiliateUrl)}
-              className="p-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl cursor-pointer transition-colors shrink-0"
-              title="Partager"
-            >
-              <Share2 className="h-4.5 w-4.5" />
-            </button>
-          </div>
+      {/* Liens d'Affiliation par Ebook */}
+      <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
+        <div className="border-b border-slate-100 pb-3">
+          <h3 className="font-display font-bold text-base text-slate-900 flex items-center gap-2">
+            <Share2 className="h-5 w-5 text-indigo-600" />
+            <span>Vos Liens d'Affiliation par Ebook</span>
+          </h3>
+          <p className="text-xs text-slate-500 mt-1">
+            Partagez le lien personnalisé de n'importe quel ebook pour gagner <strong>20% de commission</strong> sur chaque vente. Vos recrues rejoindront automatiquement votre équipe.
+          </p>
         </div>
 
-        {/* Link 2: Recruitment Link */}
-        <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100">
-              <UserPlus className="h-5 w-5" />
-            </div>
-            <div>
-              <h3 className="font-display font-bold text-sm text-slate-900 leading-none">Votre lien de recrutement d'équipe</h3>
-              <p className="text-[10px] text-slate-400 mt-1">Recrutez de nouveaux affiliés. Gagnez <strong>5% au Niveau 2</strong> et <strong>2% au Niveau 3</strong> de leurs ventes.</p>
-            </div>
-          </div>
+        {ebooks.length === 0 ? (
+          <p className="text-xs text-slate-400 italic text-center py-4">Aucun ebook disponible dans le catalogue.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-72 overflow-y-auto pr-1">
+            {ebooks.map((ebook) => {
+              const personalLink = `${window.location.origin}/ebook/${ebook.id}?ref=${userAffiliate.referral_code}`;
+              const isCopied = copiedEbookId === ebook.id;
 
-          <div className="flex gap-2 items-center">
-            <input
-              type="text"
-              readOnly
-              value={recruitUrl}
-              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-600 font-mono focus:outline-none focus:ring-0"
-            />
-            <button
-              onClick={() => copyToClipboard(recruitUrl, "recruit")}
-              className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl cursor-pointer transition-colors shrink-0"
-              title="Copier le lien"
-            >
-              {copiedLink === "recruit" ? <Check className="h-4.5 w-4.5 text-emerald-600" /> : <Copy className="h-4.5 w-4.5" />}
-            </button>
-            <button
-              onClick={() => shareLink("Devenir Affilié EbookStore", "Rejoignez mon équipe d'affiliés et gagnez de l'argent ensemble !", recruitUrl)}
-              className="p-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-xl cursor-pointer transition-colors shrink-0"
-              title="Partager"
-            >
-              <Share2 className="h-4.5 w-4.5" />
-            </button>
+              return (
+                <div key={ebook.id} className="flex gap-4 p-4 bg-slate-50 border border-slate-200 rounded-2xl items-center hover:border-indigo-300 transition-all">
+                  <img
+                    src={ebook.url_couverture || "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?auto=format&fit=crop&q=80&w=100"}
+                    alt={ebook.titre}
+                    referrerPolicy="no-referrer"
+                    className="w-10 h-14 object-cover rounded-md shadow-sm border border-slate-200 shrink-0"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?auto=format&fit=crop&q=80&w=100";
+                    }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-[9px] uppercase font-bold tracking-wider text-slate-400 font-mono block mb-0.5">{ebook.categorie}</span>
+                    <h4 className="font-semibold text-xs text-slate-900 truncate">{ebook.titre}</h4>
+                    <span className="text-[10px] font-bold text-indigo-600 font-mono block mt-0.5">
+                      {ebook.prix === 0 ? "GRATUIT" : `${ebook.prix.toLocaleString()} FCFA`}
+                    </span>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <button
+                      onClick={() => handleCopyLink(personalLink, ebook.id)}
+                      className="p-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl cursor-pointer transition-all shrink-0"
+                      title="Copier mon lien d'affilié"
+                    >
+                      {isCopied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                    </button>
+                    <button
+                      onClick={() => shareLink(ebook.titre, `Découvrez l'ebook "${ebook.titre}" sur notre Store !`, personalLink)}
+                      className="p-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl cursor-pointer transition-all shrink-0"
+                      title="Partager"
+                    >
+                      <Share2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </div>
+        )}
       </div>
 
       {/* KPI Stats Grid */}
@@ -769,38 +878,25 @@ export default function AffiliatePortal({
         </div>
 
         {/* Metric 3 */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm relative overflow-hidden">
-          <span className="block text-[10px] uppercase font-mono font-bold text-slate-400">Conversion</span>
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm relative overflow-hidden ring-2 ring-indigo-500/20">
+          <span className="block text-[10px] uppercase font-mono font-bold text-indigo-500">Gains Réclamables</span>
           <div className="flex items-baseline gap-1 mt-2">
-            <span className="text-2xl font-bold font-display text-indigo-600">
-              {loadingStats ? "..." : stats.tauxConversion}%
+            <span className="text-xl font-black font-mono text-indigo-600">
+              {loadingStats ? "..." : stats.gainsClaimable.toLocaleString()}
             </span>
+            <span className="text-[10px] font-mono text-slate-400">FCFA</span>
           </div>
-          <div className="absolute right-3.5 bottom-3 text-emerald-50 select-none">
-            <CheckCircle2 className="h-8 w-8 text-emerald-50" />
+          <div className="absolute right-3.5 bottom-3 text-indigo-50 select-none">
+            <DollarSign className="h-8 w-8 text-indigo-50" />
           </div>
         </div>
 
         {/* Metric 4 */}
         <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm relative overflow-hidden">
-          <span className="block text-[10px] uppercase font-mono font-bold text-slate-400">Gains passés (Paid)</span>
-          <div className="flex items-baseline gap-1 mt-2">
-            <span className="text-xl font-black font-mono text-emerald-600">
-              {loadingStats ? "..." : stats.gainsPaid.toLocaleString()}
-            </span>
-            <span className="text-[10px] font-mono text-slate-400">FCFA</span>
-          </div>
-          <div className="absolute right-3.5 bottom-3 text-emerald-50 select-none">
-            <DollarSign className="h-8 w-8 text-emerald-50" />
-          </div>
-        </div>
-
-        {/* Metric 5 */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm relative overflow-hidden">
-          <span className="block text-[10px] uppercase font-mono font-bold text-slate-400">Gains à venir (Pending)</span>
+          <span className="block text-[10px] uppercase font-mono font-bold text-amber-500">En cours de paiement</span>
           <div className="flex items-baseline gap-1 mt-2">
             <span className="text-xl font-black font-mono text-amber-600">
-              {loadingStats ? "..." : stats.gainsPending.toLocaleString()}
+              {loadingStats ? "..." : stats.gainsPendingClaim.toLocaleString()}
             </span>
             <span className="text-[10px] font-mono text-slate-400">FCFA</span>
           </div>
@@ -809,7 +905,172 @@ export default function AffiliatePortal({
           </div>
         </div>
 
+        {/* Metric 5 */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+          <span className="block text-[10px] uppercase font-mono font-bold text-emerald-500">Gains Payés</span>
+          <div className="flex items-baseline gap-1 mt-2">
+            <span className="text-xl font-black font-mono text-emerald-600">
+              {loadingStats ? "..." : stats.gainsPaid.toLocaleString()}
+            </span>
+            <span className="text-[10px] font-mono text-slate-400">FCFA</span>
+          </div>
+          <div className="absolute right-3.5 bottom-3 text-emerald-50 select-none">
+            <CheckCircle2 className="h-8 w-8 text-emerald-50" />
+          </div>
+        </div>
+
       </div>
+
+      {/* Retrait des gains & Historique */}
+      <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-slate-100 pb-4">
+          <div>
+            <h3 className="font-display font-bold text-base text-slate-900 flex items-center gap-2">
+              <Coins className="h-5 w-5 text-indigo-600" />
+              <span>Réclamation des Gains d'Affiliation</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              Vous avez un solde réclamable de <strong className="text-indigo-650 font-mono font-bold">{stats.gainsClaimable.toLocaleString()} FCFA</strong>. Demandez un transfert vers votre compte Mobile Money.
+            </p>
+          </div>
+          
+          <button
+            onClick={() => {
+              setPayoutPhone(userAffiliate.telephone || "");
+              setShowPayoutModal(false);
+              setPayoutError(null);
+              setPayoutSuccess(false);
+              setShowPayoutModal(true);
+            }}
+            disabled={stats.gainsClaimable <= 0}
+            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-100 disabled:text-slate-400 text-white font-bold text-xs rounded-xl transition-all cursor-pointer shadow-sm disabled:shadow-none flex items-center gap-1.5 self-start sm:self-auto"
+          >
+            <Coins className="h-4 w-4" />
+            <span>Réclamer mes gains</span>
+          </button>
+        </div>
+
+        {/* Historique des Demandes */}
+        <div className="space-y-4">
+          <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide">Historique de vos paiements</h4>
+          
+          {loadingPayouts ? (
+            <div className="flex items-center justify-center py-6">
+              <RefreshCw className="h-6 w-6 animate-spin text-indigo-600" />
+            </div>
+          ) : payoutRequests.length === 0 ? (
+            <p className="text-xs text-slate-400 italic">Aucune demande de paiement pour le moment.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono">
+                    <th className="py-2 px-3">Date</th>
+                    <th className="py-2 px-3">Montant</th>
+                    <th className="py-2 px-3">Compte Mobile Money</th>
+                    <th className="py-2 px-3">Statut</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {payoutRequests.map((p) => (
+                    <tr key={p.id} className="hover:bg-slate-50/50">
+                      <td className="py-3 px-3 text-slate-500 font-mono">
+                        {new Date(p.requested_at).toLocaleDateString()}
+                      </td>
+                      <td className="py-3 px-3 font-bold font-mono text-slate-900">
+                        {p.montant.toLocaleString()} FCFA
+                      </td>
+                      <td className="py-3 px-3 text-slate-600 font-mono">
+                        {p.telephone_paiement}
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider font-mono ${
+                          p.statut === "paid"
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                            : p.statut === "rejected"
+                            ? "bg-rose-50 text-rose-700 border border-rose-100"
+                            : "bg-amber-50 text-amber-700 border border-amber-100"
+                        }`}>
+                          {p.statut === "paid" ? "Payé" : p.statut === "rejected" ? "Rejeté" : "En attente"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Payout Request Modal */}
+      {showPayoutModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowPayoutModal(false)}></div>
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative transform overflow-hidden rounded-2xl bg-white p-6 text-left shadow-2xl transition-all sm:w-full sm:max-w-md border border-slate-200">
+              <h3 className="font-display font-black text-lg text-slate-900">Réclamer mes gains</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Saisissez votre numéro MTN Mobile Money ou Orange Money pour recevoir vos gains d'affiliation de <strong className="text-indigo-650 font-mono font-bold">{stats.gainsClaimable.toLocaleString()} FCFA</strong>.
+              </p>
+
+              {payoutError && (
+                <div className="mt-4 p-3 bg-red-50 border border-red-150 rounded-xl text-xs text-red-800">
+                  {payoutError}
+                </div>
+              )}
+
+              {payoutSuccess ? (
+                <div className="mt-4 p-4 bg-emerald-50 border border-emerald-150 rounded-xl text-xs text-emerald-800 space-y-1">
+                  <span className="font-bold block">🎉 Demande de paiement soumise !</span>
+                  <span className="block text-[11px]">Votre demande de transfert est enregistrée. L'administrateur validera le paiement d'ici quelques instants.</span>
+                </div>
+              ) : (
+                <form onSubmit={handleSubmitPayoutRequest} className="mt-4 space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 block uppercase tracking-wide">Numéro de téléphone paiement *</label>
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-3 h-4.5 w-4.5 text-slate-400" />
+                      <input
+                        type="tel"
+                        required
+                        placeholder="Ex: 699443322 (Orange/MTN)"
+                        value={payoutPhone}
+                        onChange={(e) => setPayoutPhone(e.target.value)}
+                        className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-250 rounded-xl text-xs focus:outline-none focus:bg-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-slate-800 font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 justify-end pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowPayoutModal(false)}
+                      className="px-4 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-all"
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={submittingPayout}
+                      className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-all shadow-sm flex items-center gap-1.5"
+                    >
+                      {submittingPayout ? (
+                        <>
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          <span>Traitement...</span>
+                        </>
+                      ) : (
+                        <span>Confirmer le retrait</span>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Network Size & Messenger columns */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">

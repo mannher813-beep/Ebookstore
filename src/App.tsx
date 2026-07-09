@@ -682,7 +682,108 @@ export default function App() {
   };
 
   // Initiate MoneyFusion Payment Flow
-  const handleOpenCheckout = (ebook: Ebook) => {
+  const handleOpenCheckout = async (ebook: Ebook) => {
+    if (!user) {
+      setAuthModalOpen(true);
+      return;
+    }
+
+    if (ebook.prix === 0) {
+      setIsPurchasing(true);
+      try {
+        if (hasSupabaseKeys && supabase) {
+          const tokenPay = "free_" + Math.random().toString(36).substr(2, 14);
+
+          // Check for affiliate referral code in localStorage
+          let affiliateIdToInsert: string | null = null;
+          const savedRefCode = localStorage.getItem("ebookstore_ref");
+          if (savedRefCode) {
+            try {
+              const { data: affiliateRow } = await supabase
+                .from("affiliates")
+                .select("id")
+                .eq("referral_code", savedRefCode)
+                .maybeSingle();
+              if (affiliateRow) {
+                affiliateIdToInsert = affiliateRow.id;
+              }
+            } catch (e) {
+              console.error("Error matching affiliate referral code:", e);
+            }
+          }
+
+          // Insert transaction directly into Supabase
+          const { error: insertErr } = await supabase.from("achats").insert([
+            {
+              user_id: user.id,
+              ebook_id: ebook.id,
+              token_pay: tokenPay,
+              statut: "paid",
+              montant: 0,
+              affiliate_id: affiliateIdToInsert,
+            }
+          ]);
+
+          if (insertErr) {
+            throw new Error("Impossible d'ajouter l'ebook gratuit à votre compte : " + insertErr.message);
+          }
+
+          // Refresh purchases data
+          const session = (await supabase.auth.getSession()).data.session;
+          if (session) {
+            await fetchUserProfileAndData(user.id, session.access_token, user.email);
+          }
+
+          alert(`🎉 L'ebook gratuit "${ebook.titre}" a été ajouté avec succès à votre bibliothèque ! Vous pouvez le télécharger dès maintenant.`);
+          setSelectedEbook(null);
+          return;
+        }
+
+        // Fallback flow
+        let authToken = "";
+        if (supabase) {
+          const session = (await supabase.auth.getSession()).data.session;
+          authToken = session?.access_token || "";
+        }
+
+        const payload = {
+          ebookId: ebook.id,
+          userId: user.id,
+          numeroSend: "FREE",
+          nomclient: user.email.split("@")[0] || "Client",
+          userEmail: user.email,
+          montant: 0,
+          statut: "paid",
+        };
+
+        const res = await fetch(`${API_BASE_URL}/api/payments/create`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (res.ok) {
+          if (supabase) {
+            const session = (await supabase.auth.getSession()).data.session;
+            if (session) await fetchUserProfileAndData(user.id, session.access_token, user.email);
+          }
+          alert(`🎉 L'ebook gratuit "${ebook.titre}" a été ajouté avec succès à votre bibliothèque ! Vous pouvez le télécharger dès maintenant.`);
+          setSelectedEbook(null);
+        } else {
+          const errData = await res.json();
+          alert(errData.error || "Impossible d'obtenir l'ebook gratuit.");
+        }
+      } catch (err: any) {
+        alert("Une erreur s'est produite : " + err.message);
+      } finally {
+        setIsPurchasing(false);
+      }
+      return;
+    }
+
     setCheckoutEbook(ebook);
     setPhoneInput("");
     setCountryCode("+237");
@@ -1312,6 +1413,8 @@ export default function App() {
             userAffiliate={userAffiliate}
             onRefreshAffiliate={fetchUserAffiliate}
             onOpenAuth={() => setAuthModalOpen(true)}
+            ebooks={ebooks}
+            purchases={purchases}
           />
         )}
       </main>

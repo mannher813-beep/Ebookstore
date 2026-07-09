@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { CreditCard, ArrowRight, CheckCircle, Eye, Star, Share2, Check } from "lucide-react";
+import { CreditCard, ArrowRight, CheckCircle, Eye, Star, Share2, Check, Download } from "lucide-react";
 import { Ebook } from "../types";
 
 interface EbookCardProps {
@@ -110,9 +110,15 @@ export default function EbookCard({
           <div className="flex items-center justify-between mb-4">
             <div>
               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider font-mono block">Prix</span>
-              <span className="font-display font-black text-lg text-indigo-600">
-                {ebook.prix.toLocaleString()} <span className="text-xs text-indigo-400 font-bold font-mono">FCFA</span>
-              </span>
+              {ebook.prix === 0 ? (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase tracking-wider font-mono mt-1">
+                  GRATUIT
+                </span>
+              ) : (
+                <span className="font-display font-black text-lg text-indigo-600">
+                  {ebook.prix.toLocaleString()} <span className="text-xs text-indigo-400 font-bold font-mono">FCFA</span>
+                </span>
+              )}
             </div>
 
             {hasPurchased && (
@@ -162,10 +168,18 @@ export default function EbookCard({
                   }
                 }}
                 disabled={isPurchasing}
-                className="flex-[1.5] py-2 bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-slate-100 disabled:text-slate-400 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm hover:shadow active:scale-95"
+                className={`flex-[1.5] py-2 text-white disabled:bg-slate-100 disabled:text-slate-400 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm hover:shadow active:scale-95 ${
+                  ebook.prix === 0 
+                    ? "bg-emerald-600 hover:bg-emerald-700" 
+                    : "bg-indigo-600 hover:bg-indigo-700"
+                }`}
               >
-                <CreditCard className="h-3.5 w-3.5" />
-                <span>{isPurchasing ? "Traitement..." : "Acheter"}</span>
+                {ebook.prix === 0 ? (
+                  <Download className="h-3.5 w-3.5" />
+                ) : (
+                  <CreditCard className="h-3.5 w-3.5" />
+                )}
+                <span>{isPurchasing ? "Traitement..." : ebook.prix === 0 ? "Télécharger" : "Acheter"}</span>
               </button>
 
               <button
