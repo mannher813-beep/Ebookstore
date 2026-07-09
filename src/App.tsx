@@ -949,13 +949,21 @@ export default function App() {
       }
 
       console.log(`[DOWNLOAD] Tentative de récupération du lien via le backend pour l'ebook: ${ebookId}`);
-      const res = await fetch(`${API_BASE_URL}/api/download/${ebookId}`, {
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-        },
-      });
+      
+      let res: Response | null = null;
+      let fetchSuccess = false;
+      try {
+        res = await fetch(`${API_BASE_URL}/api/download/${ebookId}`, {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+        });
+        fetchSuccess = true;
+      } catch (fetchErr: any) {
+        console.warn("[DOWNLOAD] Échec de la requête de téléchargement vers le serveur backend (réseau ou CORS). Tentative de repli direct client-side...", fetchErr);
+      }
 
-      if (res.ok) {
+      if (fetchSuccess && res && res.ok) {
         const data = await res.json();
         const link = document.createElement("a");
         link.href = data.url;
@@ -968,7 +976,7 @@ export default function App() {
         return;
       }
 
-      // Fallback: If backend is not available or returned an error, and we have direct Supabase keys, try client-side direct access
+      // Fallback: If backend is not available, returned an error, or failed to respond, and we have direct Supabase keys, try client-side direct access
       if (hasSupabaseKeys && supabase) {
         console.warn("[DOWNLOAD] Échec ou indisponibilité du backend. Essai de génération directe client-side...");
         const session = (await supabase.auth.getSession()).data.session;
@@ -1023,9 +1031,9 @@ export default function App() {
         return;
       }
 
-      // If the backend failed and we had no client-side direct fallback
-      const errData = await res.json().catch(() => ({}));
-      alert(errData.error || "Impossible de générer le lien de téléchargement sécurisé.");
+      // If the backend failed/was offline AND we had no client-side direct fallback
+      const errData = res ? await res.json().catch(() => ({})) : {};
+      alert(errData.error || "Impossible de générer le lien de téléchargement sécurisé. Veuillez vous assurer que le serveur backend est démarré.");
     } catch (err: any) {
       alert("Erreur lors de la génération de l'URL sécurisée : " + err.message);
     } finally {
