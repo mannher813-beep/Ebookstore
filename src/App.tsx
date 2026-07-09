@@ -941,30 +941,25 @@ export default function App() {
   const handleDownloadEbook = async (ebookId: string) => {
     setDownloadingId(ebookId);
     try {
-      // Prioritize the secure backend endpoint which uses SUPABASE_SERVICE_ROLE_KEY to bypass RLS
       let authToken = "";
       if (supabase) {
         const session = (await supabase.auth.getSession()).data.session;
         authToken = session?.access_token || "";
       }
 
-      console.log(`[DOWNLOAD] Tentative de récupération du lien via le backend pour l'ebook: ${ebookId}`);
-      
-      let res: Response | null = null;
-      let fetchSuccess = false;
-      try {
-        res = await fetch(`${API_BASE_URL}/api/download/${ebookId}`, {
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-          },
-        });
-        fetchSuccess = true;
-      } catch (fetchErr: any) {
-        console.warn("[DOWNLOAD] Échec de la requête de téléchargement vers le serveur backend (réseau ou CORS). Tentative de repli direct client-side...", fetchErr);
-      }
+      const downloadUrl = `${API_BASE_URL}/api/download/${ebookId}`;
+      console.log(`[DOWNLOAD] Déclenchement de l'appel réseau de téléchargement.`);
+      console.log(`[DOWNLOAD] URL complète appelée : "${downloadUrl}"`);
 
-      if (fetchSuccess && res && res.ok) {
+      const res = await fetch(downloadUrl, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+
+      if (res.ok) {
         const data = await res.json();
+        console.log(`[DOWNLOAD] URL signée reçue avec succès du backend : "${data.url}"`);
         const link = document.createElement("a");
         link.href = data.url;
         link.download = data.filename || "ebook.pdf";
@@ -976,65 +971,10 @@ export default function App() {
         return;
       }
 
-      // Fallback: If backend is not available, returned an error, or failed to respond, and we have direct Supabase keys, try client-side direct access
-      if (hasSupabaseKeys && supabase) {
-        console.warn("[DOWNLOAD] Échec ou indisponibilité du backend. Essai de génération directe client-side...");
-        const session = (await supabase.auth.getSession()).data.session;
-        if (!session?.user) {
-          alert("Veuillez vous connecter pour télécharger cet ebook.");
-          return;
-        }
-
-        // 1. Check purchase
-        const { data: purchase, error: purchaseErr } = await supabase
-          .from("achats")
-          .select("*")
-          .eq("user_id", session.user.id)
-          .eq("ebook_id", ebookId)
-          .eq("statut", "paid")
-          .maybeSingle();
-
-        if (purchaseErr || !purchase) {
-          alert("Vous n'avez pas acheté cet ebook ou le paiement est toujours en cours.");
-          return;
-        }
-
-        // 2. Get ebook storage path
-        const { data: ebook, error: ebookErr } = await supabase
-          .from("ebooks")
-          .select("url_fichier_storage")
-          .eq("id", ebookId)
-          .single();
-
-        if (ebookErr || !ebook || !ebook.url_fichier_storage) {
-          alert("Fichier d'ebook non trouvé sur notre serveur.");
-          return;
-        }
-
-        // 3. Generate signed URL directly from client
-        const { data: signedUrlData, error: storageErr } = await supabase.storage
-          .from("ebooks-fichiers")
-          .createSignedUrl(ebook.url_fichier_storage, 60);
-
-        if (storageErr || !signedUrlData) {
-          throw storageErr || new Error("Échec de la génération du lien sécurisé.");
-        }
-
-        const link = document.createElement("a");
-        link.href = signedUrlData.signedUrl;
-        link.download = ebook.url_fichier_storage;
-        link.target = "_blank";
-        link.referrerPolicy = "no-referrer";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        return;
-      }
-
-      // If the backend failed/was offline AND we had no client-side direct fallback
-      const errData = res ? await res.json().catch(() => ({})) : {};
-      alert(errData.error || "Impossible de générer le lien de téléchargement sécurisé. Veuillez vous assurer que le serveur backend est démarré.");
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Erreur serveur (Code ${res.status})`);
     } catch (err: any) {
+      console.error("[DOWNLOAD ERROR] Échec lors du téléchargement :", err);
       alert("Erreur lors de la génération de l'URL sécurisée : " + err.message);
     } finally {
       setDownloadingId(null);
