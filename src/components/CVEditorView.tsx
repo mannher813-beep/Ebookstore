@@ -148,15 +148,20 @@ export default function CVEditorView({
     }
   };
 
-  const handleSave = async (forceVisibility?: "private" | "public" | "anonymous") => {
+  const handleSave = async (forceVisibility?: "private" | "public" | "anonymous" | React.MouseEvent) => {
     if (!supabase) return;
 
+    // Guard: if forceVisibility is not a valid visibility string, treat as undefined (e.g. if it is a React event)
+    const validVisibility = (typeof forceVisibility === "string" && ["private", "public", "anonymous"].includes(forceVisibility))
+      ? forceVisibility
+      : undefined;
+
     // Check if we need to confirm publication
-    const activeVisibility = forceVisibility || visibility;
+    const activeVisibility = validVisibility || visibility;
     const needsConfirm = 
       (activeVisibility === "public" || activeVisibility === "anonymous") && 
       (cv.visibility === "private" || !cv.visibility) &&
-      !forceVisibility;
+      !validVisibility;
 
     if (needsConfirm) {
       setShowPublishConfirm(true);
@@ -260,7 +265,7 @@ export default function CVEditorView({
 
         <div className="flex items-center gap-3">
           <button
-            onClick={handleSave}
+            onClick={() => handleSave()}
             disabled={saving}
             className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-sm font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-md hover:shadow-lg"
           >

@@ -33,18 +33,19 @@ export default function BioEditorView({
     setSlugError(null);
   };
 
-  const handleSave = async (forcePublicValue?: boolean) => {
+  const handleSave = async (forcePublicValue?: boolean | React.MouseEvent) => {
     if (!supabase) return;
     if (!slug.trim()) {
       setSlugError("Le slug d'adresse ne peut pas être vide.");
       return;
     }
 
-    const activePublicValue = forcePublicValue !== undefined ? forcePublicValue : isPublic;
+    const validPublicValue = typeof forcePublicValue === "boolean" ? forcePublicValue : undefined;
+    const activePublicValue = validPublicValue !== undefined ? validPublicValue : isPublic;
     const needsConfirm = 
       activePublicValue === true && 
       (bio.is_public === false || bio.is_public === undefined) &&
-      forcePublicValue === undefined;
+      validPublicValue === undefined;
 
     if (needsConfirm) {
       setShowPublishConfirm(true);
@@ -114,7 +115,7 @@ export default function BioEditorView({
         </div>
 
         <button
-          onClick={handleSave}
+          onClick={() => handleSave()}
           disabled={saving}
           className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-sm font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-md hover:shadow-lg self-end sm:self-auto"
         >
