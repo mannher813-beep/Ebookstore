@@ -43,6 +43,7 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
   const [titre, setTitre] = useState("");
   const [description, setDescription] = useState("");
   const [prix, setPrix] = useState("");
+  const [isGratuit, setIsGratuit] = useState(false);
   const [urlCouverture, setUrlCouverture] = useState("");
   const [urlFichier, setUrlFichier] = useState("");
   const [categorie, setCategorie] = useState("Programmation");
@@ -521,19 +522,29 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
     setSuccess(false);
     setLoading(true);
 
-    if (!titre || !description || prix === "" || !urlCouverture || !urlFichier || !categorie) {
+    if (!titre || !description || !urlCouverture || !urlFichier || !categorie) {
       setError("Veuillez remplir tous les champs requis et téléverser les fichiers.");
       setLoading(false);
       return;
     }
 
-    // Clean and validate the price (numeric)
-    const cleanedPrix = prix.toString().replace(/,/g, ".").replace(/\s/g, "");
-    const parsedPrix = Number(cleanedPrix);
-    if (isNaN(parsedPrix) || parsedPrix < 0) {
-      setError("Le prix saisi n'est pas un nombre valide. Veuillez entrer uniquement des chiffres (ex : 5000, 0 ou 49.99).");
-      setLoading(false);
-      return;
+    let parsedPrix = 0;
+    if (!isGratuit) {
+      if (prix === "") {
+        setError("Veuillez renseigner un prix pour un ebook payant.");
+        setLoading(false);
+        return;
+      }
+      // Clean and validate the price (numeric)
+      const cleanedPrix = prix.toString().replace(/,/g, ".").replace(/\s/g, "");
+      parsedPrix = Number(cleanedPrix);
+      if (isNaN(parsedPrix) || parsedPrix <= 0) {
+        setError("Le prix d'un ebook payant doit être un nombre valide strictement supérieur à 0 (ex : 5000 ou 49.99).");
+        setLoading(false);
+        return;
+      }
+    } else {
+      parsedPrix = 0;
     }
 
     try {
@@ -551,6 +562,7 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
         setTitre("");
         setDescription("");
         setPrix("");
+        setIsGratuit(false);
         setUrlCouverture("");
         setUrlFichier("");
         setCouvertureName("");
@@ -664,15 +676,41 @@ export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configSt
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-455 uppercase tracking-wider font-mono mb-1.5">Prix (en FCFA) *</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[10px] font-bold text-slate-455 uppercase tracking-wider font-mono">
+                    Prix (en FCFA) {isGratuit ? "" : "*"}
+                  </label>
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-slate-500 hover:text-indigo-600 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={isGratuit}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setIsGratuit(checked);
+                        if (checked) {
+                          setPrix("0");
+                        } else {
+                          setPrix("");
+                        }
+                      }}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/20 h-3.5 w-3.5 cursor-pointer"
+                    />
+                    <span>Ebook gratuit</span>
+                  </label>
+                </div>
                 <input
                   type="number"
-                  required
+                  required={!isGratuit}
+                  disabled={isGratuit}
                   min="0"
-                  placeholder="Ex : 4500"
-                  value={prix}
+                  placeholder={isGratuit ? "0 (Gratuit)" : "Ex : 4500"}
+                  value={isGratuit ? "0" : prix}
                   onChange={(e) => setPrix(e.target.value)}
-                  className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-sans"
+                  className={`w-full px-3.5 py-2 text-sm border rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-sans ${
+                    isGratuit
+                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                      : "bg-slate-50 border-slate-200 text-slate-900"
+                  }`}
                 />
               </div>
             </div>
