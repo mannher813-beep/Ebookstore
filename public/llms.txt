@@ -1,0 +1,41 @@
+# EbookStore Afrique - Plateforme d'Ebooks de Développement Professionnel
+
+EbookStore Afrique est la plateforme de référence pour l'achat et le téléchargement d'ebooks de haute qualité, spécialement conçus pour propulser la carrière des développeurs, ingénieurs logiciels et professionnels de la technologie en Afrique.
+
+---
+
+## 🚀 Activité Principale
+Nous proposons des guides pratiques, des manuels techniques et des ouvrages de référence rédigés par des experts du secteur pour aider les développeurs africains à acquérir des compétences de pointe et à créer des sites web et applications professionnels, avec ou sans connaissances préalables en code.
+
+---
+
+## 📚 Catégories d'Ebooks Disponibles
+Nos ouvrages couvrent plusieurs domaines essentiels du développement et de la technologie :
+- **Développement Web & Mobile** : Apprenez à concevoir des applications modernes et performantes.
+- **Design & Interface Utilisateur (UI/UX)** : Maîtrisez la création d'interfaces esthétiques et centrées sur l'utilisateur.
+- **No-Code / Low-Code** : Créez des applications professionnelles sans savoir coder grâce aux meilleurs outils visuels.
+- **Carrière & Entreprenariat Tech** : Réussissez vos entretiens, trouvez des clients en freelance et lancez votre startup en Afrique.
+
+---
+
+## 💳 Processus d'Achat Sécurisé
+L'achat s'effectue de manière instantanée et sécurisée via les méthodes de paiement locales les plus populaires en Afrique Centrale et de l'Ouest :
+1. **Sélection de l'ouvrage** : L'utilisateur sélectionne son ebook dans notre catalogue.
+2. **Paiement Mobile Money** : Intégration directe via la passerelle de paiement sécurisée **MoneyFusion** (Orange Money, MTN Mobile Money, Wave, etc.).
+3. **Téléchargement Instantané** : Dès la validation du paiement, l'acheteur est redirigé vers sa bibliothèque où un lien de téléchargement signé de son fichier PDF, hautement sécurisé par Supabase Storage, est automatiquement généré pour une durée de 60 secondes.
+
+---
+
+## 🤝 Programme d'Affiliation & Parrainage
+EbookStore Afrique intègre un programme d'affiliation lucratif permettant à notre communauté de monétiser son réseau :
+- **Partage de liens personnalisés** : Chaque utilisateur peut générer un lien d'affiliation unique pour n'importe quel ebook disponible.
+- **Commission attractive** : Les affiliés perçoivent une commission généreuse (généralement jusqu'à 30%) créditée directement sur leur solde pour chaque vente effectuée grâce à leur lien de parrainage.
+- **Suivi en temps réel** : Un portail d'affiliation complet permet de suivre les clics, les conversions et de demander des retraits de gains par Mobile Money.
+
+---
+
+## 🔗 Liens Utiles
+- **Page d'Accueil & Catalogue** : https://ebookstore-73b.pages.dev/
+- **Mentions Légales** : https://ebookstore-73b.pages.dev/mentions-legales
+- **Politique de Confidentialité** : https://ebookstore-73b.pages.dev/confidentialite
+- **Conditions Générales de Vente (CGV)** : https://ebookstore-73b.pages.dev/conditions-generales

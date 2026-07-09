@@ -1249,9 +1249,9 @@ export default function App() {
                 <span className="bg-indigo-500/10 backdrop-blur-md text-indigo-300 text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full border border-indigo-500/20 font-mono">
                   🚀 NOURRISSEZ VOTRE INTELLIGENCE
                 </span>
-                <h2 className="font-display font-black text-3xl sm:text-4xl lg:text-5xl tracking-tight leading-none">
+                <h1 className="font-display font-black text-3xl sm:text-4xl lg:text-5xl tracking-tight leading-none">
                   Les Meilleurs Ebooks de Développement en Afrique
-                </h2>
+                </h1>
                 <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-md">
                   Téléchargement de PDF haute-qualité sécurisé et automatisé. Payez instantanément par <strong>Orange Money, MTN MoMo, Moov ou Wave</strong>.
                 </p>
