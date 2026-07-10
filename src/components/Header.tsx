@@ -1,5 +1,5 @@
 import React from "react";
-import { BookOpen, User, Shield, LogOut, Terminal, BookMarked, Search, AlertTriangle, Coins, Menu, X } from "lucide-react";
+import { BookOpen, User, Shield, LogOut, Terminal, BookMarked, Search, AlertTriangle, Coins, Menu, X, ShoppingCart } from "lucide-react";
 
 interface HeaderProps {
   currentView: string;
@@ -14,6 +14,8 @@ interface HeaderProps {
   selectedCategory: string;
   setSelectedCategory: (category: string) => void;
   categories: string[];
+  cartCount: number;
+  onOpenCart: () => void;
 }
 
 export default function Header({
@@ -29,6 +31,8 @@ export default function Header({
   selectedCategory,
   setSelectedCategory,
   categories,
+  cartCount,
+  onOpenCart,
 }: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
@@ -109,6 +113,21 @@ export default function Header({
             id="nav-catalog"
           >
             Catalogue
+          </button>
+
+          {/* Desktop Shopping Cart Button */}
+          <button
+            onClick={onOpenCart}
+            className="p-2 relative text-slate-600 hover:text-indigo-650 hover:bg-slate-50 rounded-lg transition-all cursor-pointer flex items-center justify-center mr-1"
+            title="Panier"
+            id="btn-cart-desktop"
+          >
+            <ShoppingCart className="h-5 w-5" />
+            {cartCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-indigo-600 text-[9px] font-mono font-bold text-white leading-none shadow-sm">
+                {cartCount}
+              </span>
+            )}
           </button>
 
           {user ? (
@@ -207,7 +226,22 @@ export default function Header({
         </nav>
 
         {/* Mobile Hamburger Button (hidden on desktop) */}
-        <div className="flex items-center md:hidden">
+        <div className="flex items-center gap-2 md:hidden">
+          {/* Mobile Shopping Cart Button */}
+          <button
+            onClick={onOpenCart}
+            className="p-2 relative text-slate-600 hover:text-indigo-650 hover:bg-slate-100 rounded-xl transition-all cursor-pointer flex items-center justify-center"
+            title="Panier"
+            id="btn-cart-mobile"
+          >
+            <ShoppingCart className="h-5.5 w-5.5" />
+            {cartCount > 0 && (
+              <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-indigo-600 text-[8px] font-mono font-bold text-white leading-none shadow-sm">
+                {cartCount}
+              </span>
+            )}
+          </button>
+
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-all focus:outline-none cursor-pointer"

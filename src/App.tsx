@@ -3,6 +3,7 @@ import { CreditCard, Phone, Shield, ShoppingBag, X, AlertTriangle, RefreshCw, Ke
 import Header from "./components/Header";
 import EbookCard from "./components/EbookCard";
 import BookDetailModal from "./components/BookDetailModal";
+import ShoppingCartModal from "./components/ShoppingCartModal";
 import AuthModal from "./components/AuthModal";
 import AdminPanel from "./components/AdminPanel";
 import PurchaseList from "./components/PurchaseList";
@@ -80,6 +81,100 @@ export default function App() {
 
   // Success notification banner state
   const [successNotification, setSuccessNotification] = useState<{ show: boolean; message: string } | null>(null);
+
+  // Shopping Cart States
+  const [cart, setCart] = useState<Ebook[]>(() => {
+    try {
+      const saved = localStorage.getItem("ebookstore_cart");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [cartOpen, setCartOpen] = useState(false);
+
+  // Sync cart to localStorage
+  useEffect(() => {
+    localStorage.setItem("ebookstore_cart", JSON.stringify(cart));
+  }, [cart]);
+
+  const handleAddToCart = (ebook: Ebook) => {
+    if (ebook.prix === 0) {
+      handleOpenCheckout(ebook);
+      return;
+    }
+    if (!cart.some((item) => item.id === ebook.id)) {
+      setCart((prev) => [...prev, ebook]);
+      setSuccessNotification({
+        show: true,
+        message: `L'ebook "${ebook.titre}" a été ajouté à votre panier.`
+      });
+    }
+  };
+
+  const handleRemoveFromCart = (ebook: Ebook) => {
+    setCart((prev) => prev.filter((item) => item.id !== ebook.id));
+  };
+
+  const handleClearCart = () => {
+    setCart([]);
+  };
+
+  const handlePayCart = async (numeroSend: string, nomclient: string) => {
+    if (cart.length === 0 || !user) return;
+    setIsPurchasing(true);
+    setPurchaseError(null);
+
+    try {
+      let authToken = "";
+      if (supabase) {
+        const session = (await supabase.auth.getSession()).data.session;
+        authToken = session?.access_token || "";
+      }
+
+      const savedRefCode = localStorage.getItem("ebookstore_ref");
+
+      const payload = {
+        ebookIds: cart.map(item => item.id),
+        userId: user.id,
+        numeroSend,
+        nomclient,
+        referralCode: savedRefCode || undefined
+      };
+
+      const res = await fetch(`${API_BASE_URL}/api/payments/create-batch`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${authToken}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Une erreur est survenue lors du traitement de la commande.");
+      }
+
+      const responseData = await res.json();
+      if (responseData.statut && responseData.url) {
+        if (responseData.token_pay) {
+          localStorage.setItem("pending_payment_token", responseData.token_pay);
+        }
+        handleClearCart();
+        setCartOpen(false);
+        setSelectedEbook(null);
+        window.location.href = responseData.url;
+      } else {
+        throw new Error(responseData.message || "Impossible d'initier la transaction MoneyFusion.");
+      }
+    } catch (err: any) {
+      console.error("Batch payment initiation failed:", err);
+      alert("Erreur d'initialisation du panier : " + err.message);
+    } finally {
+      setIsPurchasing(false);
+    }
+  };
 
   // Diagnostic Config Status Overview
   const [configStatus, setConfigStatus] = useState<{
@@ -1258,6 +1353,8 @@ export default function App() {
         selectedCategory={selectedCategory}
         setSelectedCategory={setSelectedCategory}
         categories={categories}
+        cartCount={cart.length}
+        onOpenCart={() => setCartOpen(true)}
       />
 
       {/* Main Container */}
@@ -1380,6 +1477,7 @@ export default function App() {
                     const hasPurchased = purchases.some(
                       (p) => p.ebook_id === ebook.id && p.statut === PaymentStatus.PAID
                     );
+                    const isInCart = cart.some((item) => item.id === ebook.id);
                     return (
                       <EbookCard
                         key={ebook.id}
@@ -1390,6 +1488,9 @@ export default function App() {
                         isPurchasing={isPurchasing}
                         user={user}
                         onOpenAuth={() => setAuthModalOpen(true)}
+                        onAddToCart={handleAddToCart}
+                        onRemoveFromCart={handleRemoveFromCart}
+                        isInCart={isInCart}
                       />
                     );
                   })}
@@ -1448,6 +1549,7 @@ export default function App() {
                     const hasPurchased = purchases.some(
                       (p) => p.ebook_id === ebook.id && p.statut === PaymentStatus.PAID
                     );
+                    const isInCart = cart.some((item) => item.id === ebook.id);
                     return (
                       <EbookCard
                         key={ebook.id}
@@ -1458,6 +1560,9 @@ export default function App() {
                         isPurchasing={isPurchasing}
                         user={user}
                         onOpenAuth={() => setAuthModalOpen(true)}
+                        onAddToCart={handleAddToCart}
+                        onRemoveFromCart={handleRemoveFromCart}
+                        isInCart={isInCart}
                       />
                     );
                   })}
@@ -1682,6 +1787,24 @@ export default function App() {
           onOpenAuth={() => setAuthModalOpen(true)}
           onDownload={handleDownloadEbook}
           downloadingId={downloadingId}
+          onAddToCart={handleAddToCart}
+          onRemoveFromCart={handleRemoveFromCart}
+          isInCart={cart.some((item) => item.id === selectedEbook.id)}
+        />
+      )}
+
+      {/* 4. Shopping Cart Modal */}
+      {cartOpen && (
+        <ShoppingCartModal
+          isOpen={cartOpen}
+          onClose={() => setCartOpen(false)}
+          cart={cart}
+          onRemoveFromCart={handleRemoveFromCart}
+          onClearCart={handleClearCart}
+          onPayCart={handlePayCart}
+          isProcessing={isPurchasing}
+          user={user}
+          onOpenAuth={() => setAuthModalOpen(true)}
         />
       )}
 

@@ -433,16 +433,15 @@ app.post("/api/webhook/moneyfusion", async (req, res) => {
   try {
     const client = getSupabase();
 
-    // Find transaction
-    const { data: existingAchat } = await client
+    // Find transactions
+    const { data: existingAchats } = await client
       .from("achats")
       .select("*")
-      .eq("token_pay", tokenPay)
-      .maybeSingle();
+      .eq("token_pay", tokenPay);
 
-    if (!existingAchat) {
-      console.warn(`Webhook Error: Transaction with tokenPay ${tokenPay} not found in database.`);
-      return res.status(404).json({ error: "Transaction non trouvée" });
+    if (!existingAchats || existingAchats.length === 0) {
+      console.warn(`Webhook Error: Transactions with tokenPay ${tokenPay} not found in database.`);
+      return res.status(404).json({ error: "Transactions non trouvées" });
     }
 
     // Status mapping from MoneyFusion events
@@ -454,7 +453,8 @@ app.post("/api/webhook/moneyfusion", async (req, res) => {
     }
 
     // Avoid duplicate updates (MoneyFusion redundant notifications handler as specified)
-    if (existingAchat.statut === targetStatus) {
+    const allMatching = existingAchats.every((item: any) => item.statut === targetStatus);
+    if (allMatching) {
       console.log(`Webhook Ignored: Redundant status update for tokenPay ${tokenPay} (${targetStatus})`);
       return res.json({ message: "Notification redondante ignorée", success: true });
     }
@@ -466,8 +466,8 @@ app.post("/api/webhook/moneyfusion", async (req, res) => {
       .eq("token_pay", tokenPay);
 
     if (updateErr) throw updateErr;
-    console.log(`Transaction ${tokenPay} status updated to ${targetStatus} in Supabase.`);
-    return res.json({ message: "Statut mis à jour avec succès", success: true });
+    console.log(`Transactions ${tokenPay} status updated to ${targetStatus} in Supabase.`);
+    return res.json({ message: "Statuts mis à jour avec succès", success: true });
   } catch (err: any) {
     console.error("Database update error during webhook:", err);
     return res.status(500).json({ error: "Erreur de mise à jour de la transaction : " + err.message });
@@ -481,19 +481,20 @@ app.get("/api/payments/status/:token", async (req, res) => {
   try {
     const client = getSupabase();
 
-    const { data: existingAchat } = await client
+    const { data: existingAchats } = await client
       .from("achats")
       .select("*, ebook:ebook_id(*)")
-      .eq("token_pay", token)
-      .maybeSingle();
+      .eq("token_pay", token);
 
-    if (!existingAchat) {
-      return res.status(404).json({ error: "Transaction non trouvée" });
+    if (!existingAchats || existingAchats.length === 0) {
+      return res.status(404).json({ error: "Transactions non trouvées" });
     }
+
+    const firstAchat = existingAchats[0];
 
     // Query MoneyFusion server directly to sync statuses if pending
     const moneyfusionUrl = process.env.MONEYFUSION_API_URL;
-    if (existingAchat.statut === "pending" && moneyfusionUrl) {
+    if (firstAchat.statut === "pending" && moneyfusionUrl) {
       try {
         const statusApiUrl = `https://www.pay.moneyfusion.net/paiementNotif/${token}`;
         console.log(`Polling MoneyFusion API status directly for token: ${token} at ${statusApiUrl}`);
@@ -507,12 +508,15 @@ app.get("/api/payments/status/:token", async (req, res) => {
           if (externalStatus === "paid") targetStatus = "paid";
           else if (externalStatus === "failure" || externalStatus === "no paid") targetStatus = "failure";
 
-          if (existingAchat.statut !== targetStatus) {
-            existingAchat.statut = targetStatus;
+          if (firstAchat.statut !== targetStatus) {
             await client
               .from("achats")
               .update({ statut: targetStatus })
               .eq("token_pay", token);
+            
+            existingAchats.forEach((item: any) => {
+              item.statut = targetStatus;
+            });
           }
         }
       } catch (err) {
@@ -520,10 +524,118 @@ app.get("/api/payments/status/:token", async (req, res) => {
       }
     }
 
-    return res.json(existingAchat);
+    return res.json(existingAchats);
   } catch (err: any) {
     console.error("Error checking payment status:", err);
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// 2b. Création d'une demande de paiement par lot (Panier) MoneyFusion
+app.post("/api/payments/create-batch", async (req, res) => {
+  const { ebookIds, userId, numeroSend, nomclient, userEmail, affiliateId } = req.body;
+
+  if (!ebookIds || !Array.isArray(ebookIds) || ebookIds.length === 0 || !userId || !numeroSend || !nomclient) {
+    return res.status(400).json({ error: "Informations de panier manquantes." });
+  }
+
+  const client = getSupabase();
+  const moneyfusionApiUrl = process.env.MONEYFUSION_API_URL;
+
+  if (!moneyfusionApiUrl) {
+    return res.status(500).json({ error: "Service de paiement MoneyFusion non configuré (MONEYFUSION_API_URL manquant)." });
+  }
+
+  try {
+    const { data: ebooks, error: fetchErr } = await client
+      .from("ebooks")
+      .select("id, prix, titre")
+      .in("id", ebookIds);
+
+    if (fetchErr || !ebooks || ebooks.length === 0) {
+      return res.status(404).json({ error: "Aucun ebook trouvé dans le panier." });
+    }
+
+    const orderId = "order_cart_" + Math.random().toString(36).substr(2, 9);
+    const tokenPay = "mf_tok_cart_" + Math.random().toString(36).substr(2, 14);
+
+    const paidEbooks = ebooks.filter(item => Number(item.prix) > 0);
+    const totalPrice = paidEbooks.reduce((sum, item) => sum + Number(item.prix), 0);
+
+    const insertPayload = ebooks.map(item => ({
+      user_id: userId,
+      ebook_id: item.id,
+      token_pay: tokenPay,
+      statut: Number(item.prix) === 0 ? "paid" : "pending",
+      montant: Number(item.prix),
+      affiliate_id: affiliateId || null
+    }));
+
+    const { error: insertErr } = await client.from("achats").insert(insertPayload);
+    if (insertErr) throw insertErr;
+
+    if (totalPrice === 0) {
+      return res.json({
+        statut: true,
+        token: tokenPay,
+        freeOnly: true,
+        message: "panier gratuit traité avec succès",
+      });
+    }
+
+    const appUrl = process.env.APP_URL || `http://localhost:3000`;
+
+    const article = paidEbooks.map(item => ({ [item.titre]: Number(item.prix) }));
+    const personal_Info = paidEbooks.map(item => ({
+      userId,
+      orderId,
+      ebookId: item.id
+    }));
+
+    const payload = {
+      totalPrice,
+      article,
+      personal_Info,
+      numeroSend,
+      nomclient,
+      return_url: "https://ebookstore-73b.pages.dev/?payment=success",
+      webhook_url: `${appUrl}/api/webhook/moneyfusion`,
+    };
+
+    console.log("Sending real batch payment request to MoneyFusion API:", moneyfusionApiUrl, payload);
+    const response = await fetch(moneyfusionApiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": process.env.MONEYFUSION_PRIVATE_KEY ? `Bearer ${process.env.MONEYFUSION_PRIVATE_KEY}` : "",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+    console.log("MoneyFusion API Response:", data);
+
+    if (data.statut) {
+      const returnedToken = data.token || tokenPay;
+      if (returnedToken !== tokenPay) {
+        await client
+          .from("achats")
+          .update({ token_pay: returnedToken })
+          .eq("token_pay", tokenPay);
+      }
+
+      return res.json({
+        statut: true,
+        token: returnedToken,
+        message: "paiement en cours",
+        url: data.url,
+      });
+    } else {
+      return res.status(400).json({ error: data.message || "Échec de l'initialisation du paiement MoneyFusion pour le panier" });
+    }
+  } catch (err: any) {
+    console.error("MoneyFusion batch payment creation error:", err);
+    return res.status(502).json({ error: "Erreur de communication avec la plateforme de paiement : " + err.message });
   }
 });
 

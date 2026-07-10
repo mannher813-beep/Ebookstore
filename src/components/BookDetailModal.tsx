@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { X, CreditCard, ArrowRight, Download, Calendar, ShieldCheck, CheckCircle2, FileText, Globe, Share2, Check } from "lucide-react";
+import { X, CreditCard, ArrowRight, Download, Calendar, ShieldCheck, CheckCircle2, FileText, Globe, Share2, Check, ShoppingCart } from "lucide-react";
 import { Ebook } from "../types";
 
 interface BookDetailModalProps {
@@ -12,6 +12,9 @@ interface BookDetailModalProps {
   onOpenAuth: () => void;
   onDownload: (ebookId: string) => void;
   downloadingId: string | null;
+  onAddToCart?: (ebook: Ebook) => void;
+  onRemoveFromCart?: (ebook: Ebook) => void;
+  isInCart?: boolean;
 }
 
 export default function BookDetailModal({
@@ -24,6 +27,9 @@ export default function BookDetailModal({
   onOpenAuth,
   onDownload,
   downloadingId,
+  onAddToCart,
+  onRemoveFromCart,
+  isInCart = false,
 }: BookDetailModalProps) {
   const [copied, setCopied] = useState(false);
 
@@ -209,7 +215,7 @@ export default function BookDetailModal({
                       }
                     }}
                     disabled={isPurchasing}
-                    className={`flex-1 py-3 text-white disabled:bg-slate-100 disabled:text-slate-400 text-xs sm:text-sm font-black rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md hover:shadow-lg active:scale-95 ${
+                    className={`flex-[1.5] py-3 text-white disabled:bg-slate-100 disabled:text-slate-400 text-xs sm:text-sm font-black rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md hover:shadow-lg active:scale-95 ${
                       ebook.prix === 0 
                         ? "bg-emerald-600 hover:bg-emerald-700" 
                         : "bg-indigo-600 hover:bg-indigo-700"
@@ -224,10 +230,30 @@ export default function BookDetailModal({
                       {isPurchasing
                         ? "Initialisation..."
                         : ebook.prix === 0
-                        ? "Télécharger gratuitement"
-                        : `Acheter via Mobile Money (${ebook.prix.toLocaleString()} FCFA)`}
+                        ? "Prendre gratuitement"
+                        : "Acheter maintenant"}
                     </span>
                   </button>
+
+                  {onAddToCart && onRemoveFromCart && (
+                    <button
+                      onClick={() => {
+                        if (isInCart) {
+                          onRemoveFromCart(ebook);
+                        } else {
+                          onAddToCart(ebook);
+                        }
+                      }}
+                      className={`flex-1 py-3 border text-xs sm:text-sm font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md hover:shadow-lg active:scale-95 ${
+                        isInCart
+                          ? "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"
+                          : "bg-indigo-50 border-indigo-150 text-indigo-700 hover:bg-indigo-100"
+                      }`}
+                    >
+                      <ShoppingCart className="h-4.5 w-4.5" />
+                      <span>{isInCart ? "Retirer" : "Panier"}</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={handleShare}
@@ -249,8 +275,8 @@ export default function BookDetailModal({
 
       {/* Mobile Floating Sticky CTA */}
       {!hasPurchased && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-4 z-40 shadow-[0_-8px_30px_rgb(0,0,0,0.12)] flex items-center justify-between gap-4 animate-in slide-in-from-bottom duration-300 font-sans">
-          <div className="text-left">
+        <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-4 z-40 shadow-[0_-8px_30px_rgb(0,0,0,0.12)] flex items-center justify-between gap-3 animate-in slide-in-from-bottom duration-300 font-sans">
+          <div className="text-left shrink-0">
             <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider font-mono block">Tarif unique</span>
             {ebook.prix === 0 ? (
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase tracking-wider font-mono mt-1">
@@ -262,29 +288,51 @@ export default function BookDetailModal({
               </span>
             )}
           </div>
-          <button
-            onClick={() => {
-              if (!user) {
-                onOpenAuth();
-              } else {
-                onBuy(ebook);
-              }
-            }}
-            disabled={isPurchasing}
-            className={`flex-1 py-3 text-white disabled:bg-slate-100 disabled:text-slate-400 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md active:scale-95 duration-200 ${
-              ebook.prix === 0 
-                ? "bg-emerald-600 hover:bg-emerald-700" 
-                : "bg-indigo-600 hover:bg-indigo-700 animate-pulse"
-            }`}
-            style={ebook.prix !== 0 ? { animationDuration: "3s" } : undefined}
-          >
-            {ebook.prix === 0 ? (
-              <Download className="h-4 w-4" />
-            ) : (
-              <CreditCard className="h-4 w-4" />
+
+          <div className="flex-1 flex gap-2">
+            {onAddToCart && onRemoveFromCart && (
+              <button
+                onClick={() => {
+                  if (isInCart) {
+                    onRemoveFromCart(ebook);
+                  } else {
+                    onAddToCart(ebook);
+                  }
+                }}
+                className={`px-3 py-3 border rounded-xl transition-all flex items-center justify-center cursor-pointer shrink-0 ${
+                  isInCart
+                    ? "bg-amber-50 border-amber-200 text-amber-750"
+                    : "bg-indigo-50 border-indigo-150 text-indigo-750"
+                }`}
+                title={isInCart ? "Retirer" : "Ajouter au panier"}
+              >
+                <ShoppingCart className="h-4.5 w-4.5" />
+              </button>
             )}
-            <span>{isPurchasing ? "Traitement..." : ebook.prix === 0 ? "Télécharger" : "Acheter maintenant"}</span>
-          </button>
+
+            <button
+              onClick={() => {
+                if (!user) {
+                  onOpenAuth();
+                } else {
+                  onBuy(ebook);
+                }
+              }}
+              disabled={isPurchasing}
+              className={`flex-1 py-3 text-white disabled:bg-slate-100 disabled:text-slate-400 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md active:scale-95 duration-200 ${
+                ebook.prix === 0 
+                  ? "bg-emerald-600 hover:bg-emerald-700" 
+                  : "bg-indigo-600 hover:bg-indigo-700"
+              }`}
+            >
+              {ebook.prix === 0 ? (
+                <Download className="h-4 w-4" />
+              ) : (
+                <CreditCard className="h-4 w-4" />
+              )}
+              <span>{isPurchasing ? "Traitement..." : ebook.prix === 0 ? "Prendre" : "Acheter"}</span>
+            </button>
+          </div>
         </div>
       )}
     </div>

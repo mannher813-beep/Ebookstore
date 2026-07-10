@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { CreditCard, ArrowRight, CheckCircle, Eye, Star, Share2, Check, Download } from "lucide-react";
+import { CreditCard, ArrowRight, CheckCircle, Eye, Star, Share2, Check, Download, ShoppingCart } from "lucide-react";
 import { Ebook } from "../types";
 
 interface EbookCardProps {
@@ -11,6 +11,9 @@ interface EbookCardProps {
   isPurchasing: boolean;
   user: any;
   onOpenAuth: () => void;
+  onAddToCart?: (ebook: Ebook) => void;
+  onRemoveFromCart?: (ebook: Ebook) => void;
+  isInCart?: boolean;
 }
 
 export default function EbookCard({
@@ -21,6 +24,9 @@ export default function EbookCard({
   isPurchasing,
   user,
   onOpenAuth,
+  onAddToCart,
+  onRemoveFromCart,
+  isInCart = false,
 }: EbookCardProps) {
   // Simple random static rating generator for visual elegance
   const rating = 4.8;
@@ -154,13 +160,34 @@ export default function EbookCard({
               </button>
             </div>
           ) : (
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
               <button
                 onClick={() => onSelect(ebook)}
-                className="flex-1 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer border border-slate-200"
+                className="flex-1 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl transition-all flex items-center justify-center cursor-pointer border border-slate-200"
               >
                 <span>Détails</span>
               </button>
+
+              {onAddToCart && onRemoveFromCart && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isInCart) {
+                      onRemoveFromCart(ebook);
+                    } else {
+                      onAddToCart(ebook);
+                    }
+                  }}
+                  className={`p-2 border rounded-xl transition-all flex items-center justify-center cursor-pointer shrink-0 ${
+                    isInCart
+                      ? "bg-amber-50 border-amber-200 text-amber-600 hover:bg-amber-100"
+                      : "bg-indigo-50 border-indigo-150 text-indigo-600 hover:bg-indigo-100"
+                  }`}
+                  title={isInCart ? "Retirer du panier" : "Ajouter au panier"}
+                >
+                  <ShoppingCart className="h-4 w-4" />
+                </button>
+              )}
 
               <button
                 onClick={() => {
