@@ -432,6 +432,18 @@ export default function App() {
     }
   }, [user]);
 
+  // 3b. Automatically open auth modal if ?trigger_auth=true is in URL (redirected from unauthenticated downloads)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("trigger_auth") === "true") {
+      setAuthModalOpen(true);
+      // Clean up parameter
+      const url = new URL(window.location.href);
+      url.searchParams.delete("trigger_auth");
+      window.history.replaceState({ path: url.toString() }, "", url.toString());
+    }
+  }, []);
+
   // 4. Router-like deep linking and browser history synchronization for /ebook/{id}
   useEffect(() => {
     const handlePopState = () => {

@@ -31,7 +31,7 @@ export async function onRequest(context) {
 
   if (id && supabaseUrl && supabaseAnonKey) {
     try {
-      const dbUrl = `${supabaseUrl}/rest/v1/ebooks?id=eq.${id}&select=titre,description,url_couverture,prix,categorie`;
+      const dbUrl = `${supabaseUrl}/rest/v1/ebooks?id=eq.${id}&select=titre,description,url_couverture,prix,categorie,url_fichier_storage`;
       const dbResponse = await fetch(dbUrl, {
         method: "GET",
         headers: {
@@ -83,6 +83,8 @@ export async function onRequest(context) {
   const formattedPrice = prix === 0 ? "GRATUIT" : `${prix.toLocaleString()} FCFA`;
 
   // 4. Construct Structured Data (JSON-LD) for the Product/Book and Breadcrumbs
+  const downloadUrl = `https://ebookstore-73b.pages.dev/api/download/${id}`;
+
   const productSchema = {
     "@context": "https://schema.org",
     "@graph": [
@@ -101,7 +103,14 @@ export async function onRequest(context) {
           "priceValidUntil": "2030-12-31",
           "availability": "https://schema.org/InStock",
           "url": `https://ebookstore-73b.pages.dev/ebook/${id}`
-        }
+        },
+        "workExample": {
+          "@type": "Book",
+          "bookFormat": "https://schema.org/EBook",
+          "url": downloadUrl
+        },
+        "publishingPrinciples": downloadUrl,
+        "sameAs": [downloadUrl]
       },
       {
         "@type": "BreadcrumbList",
@@ -153,6 +162,20 @@ export async function onRequest(context) {
       <li>Mode de livraison : Téléchargement immédiat</li>
       <li>Moyens de paiement : Orange Money, MTN Mobile Money, Wave, etc. (via MoneyFusion)</li>
     </ul>
+
+    ${prix === 0 ? `
+    <h3>Téléchargement Direct de l'Ebook (Gratuit)</h3>
+    <p>
+      Télécharger directement cet ebook gratuit de haute qualité au format PDF :
+      <a href="${downloadUrl}" target="_blank" rel="noopener noreferrer" download="${escapedTitle}.pdf">${downloadUrl}</a>
+    </p>
+    ` : `
+    <h3>Lien de Téléchargement Sécurisé (Payant)</h3>
+    <p>
+      Une fois votre paiement de ${formattedPrice} complété avec succès via Orange Money, MTN MoMo ou Wave, l'accès sécurisé et le lien de téléchargement direct de cet ouvrage au format PDF sera actif et accessible à cette URL :
+      <a href="${downloadUrl}" target="_blank" rel="noopener noreferrer" download="${escapedTitle}.pdf">${downloadUrl}</a>
+    </p>
+    `}
 
     <p>
       Intéressé par cet ouvrage ? Vous pouvez l'acheter et le télécharger directement en allant sur :

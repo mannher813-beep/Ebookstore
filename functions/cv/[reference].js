@@ -2,6 +2,9 @@ export async function onRequest(context) {
   const { request, env, params } = context;
   const reference = params.reference;
 
+  const urlObj = new URL(request.url);
+  const hostUrl = `${urlObj.protocol}//${urlObj.host}`;
+
   // 1. Fetch the default app.html asset
   let html = "";
   try {
@@ -95,6 +98,7 @@ export async function onRequest(context) {
   let jsonLdString = "{}";
   if (hasData && cvData) {
     const parsedData = typeof cvData.data === "string" ? JSON.parse(cvData.data) : cvData.data;
+    const downloadUrl = `${hostUrl}/api/download/cv/${reference}`;
     
     const personSchema = {
       "@context": "https://schema.org",
@@ -113,8 +117,8 @@ export async function onRequest(context) {
             "image": photoProfil,
             "description": cvData.summary,
             "knowsAbout": parsedData.competences || [],
-            "publishingPrinciples": cvData.pdf_url || "",
-            "sameAs": cvData.pdf_url ? [cvData.pdf_url] : []
+            "publishingPrinciples": cvData.pdf_url ? downloadUrl : "",
+            "sameAs": cvData.pdf_url ? [downloadUrl] : []
           }
         },
         {
@@ -198,7 +202,7 @@ export async function onRequest(context) {
       <h3>Téléchargement Direct du PDF Officiel</h3>
       <p>
         Télécharger directement le document Curriculum Vitae officiel et certifié au format PDF :
-        <a href="${escapeHtml(cvData.pdf_url)}" target="_blank" rel="noopener noreferrer" download="CV_${escapeHtml(nomCandidat)}.pdf">${escapeHtml(cvData.pdf_url)}</a>
+        <a href="${downloadUrl}" target="_blank" rel="noopener noreferrer" download="CV_${escapeHtml(nomCandidat)}.pdf">${downloadUrl}</a>
       </p>
       ` : ""}
     </div>

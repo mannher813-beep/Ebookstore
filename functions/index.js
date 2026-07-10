@@ -105,6 +105,7 @@ export async function onRequest(context) {
 
   for (const book of ebooks) {
     const formattedPrice = book.prix === 0 ? "GRATUIT" : `${book.prix.toLocaleString()} FCFA`;
+    const downloadUrl = `https://ebookstore-73b.pages.dev/api/download/${book.id}`;
     partialSsrHtml += `
       <li>
         <article>
@@ -112,6 +113,11 @@ export async function onRequest(context) {
           <p><strong>Catégorie :</strong> ${escapeHtml(book.categorie)}</p>
           <p><strong>Prix :</strong> ${formattedPrice}</p>
           <p><strong>Description :</strong> ${escapeHtml(book.description)}</p>
+          ${book.prix === 0 ? `
+            <p><strong>Téléchargement Direct (Gratuit) :</strong> <a href="${downloadUrl}" target="_blank" rel="noopener noreferrer">${downloadUrl}</a></p>
+          ` : `
+            <p><strong>Lien de Téléchargement Sécurisé :</strong> <a href="${downloadUrl}" target="_blank" rel="noopener noreferrer">${downloadUrl}</a></p>
+          `}
           <img src="${escapeHtml(book.url_couverture)}" alt="${escapeHtml(book.titre)}" width="400" height="300" />
         </article>
       </li>

@@ -15,6 +15,49 @@ export default function CVPublicView({
   const [cv, setCv] = useState<CV | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownloadCV = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      const session = supabase ? (await supabase.auth.getSession()).data.session : null;
+      if (!session) {
+        alert("Veuillez vous connecter pour pouvoir télécharger ce CV.");
+        const url = new URL(window.location.href);
+        url.searchParams.set("trigger_auth", "true");
+        window.location.href = url.toString();
+        return;
+      }
+
+      const token = session.access_token;
+      const response = await fetch(`/api/download/cv/${reference}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || "Impossible de générer le lien de téléchargement sécurisé.");
+      }
+
+      const data = await response.json();
+      const link = document.createElement("a");
+      link.href = data.url;
+      link.download = data.filename || `CV_${reference}.pdf`;
+      link.target = "_blank";
+      link.referrerPolicy = "no-referrer";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err: any) {
+      console.error("Error downloading CV:", err);
+      alert(err.message || "Une erreur est survenue lors du téléchargement.");
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   useEffect(() => {
     const fetchPublicCV = async () => {
@@ -123,15 +166,18 @@ export default function CVPublicView({
             </button>
           )}
           {pdf_url && (
-            <a
-              href={pdf_url}
-              target="_blank"
-              rel="noreferrer"
-              className="px-4.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-md hover:shadow flex items-center gap-1.5"
+            <button
+              onClick={handleDownloadCV}
+              disabled={downloading}
+              className="px-4.5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-xs font-bold rounded-xl transition-all shadow-md hover:shadow flex items-center gap-1.5 cursor-pointer"
             >
-              <Download className="h-3.5 w-3.5" />
-              <span>Télécharger le PDF officiel</span>
-            </a>
+              {downloading ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
+              <span>{downloading ? "Génération..." : "Télécharger le PDF officiel"}</span>
+            </button>
           )}
         </div>
       </div>
