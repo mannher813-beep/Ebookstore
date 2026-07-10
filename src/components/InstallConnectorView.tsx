@@ -26,6 +26,7 @@ export default function InstallConnectorView({
   const [userRef, setUserRef] = useState<string>("CV-2026-XXXX");
   const [copiedIframe, setCopiedIframe] = useState(false);
   const [copiedWidget, setCopiedWidget] = useState(false);
+  const [copiedMcp, setCopiedMcp] = useState(false);
 
   // Fetch registered domains and user's primary CV reference
   const loadData = async () => {
@@ -345,6 +346,70 @@ export default function InstallConnectorView({
                   </>
                 )}
               </button>
+            </div>
+          </section>
+
+          <section className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs space-y-6">
+            <div className="border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <span className="w-1.5 h-3 bg-indigo-600 rounded-full"></span>
+                Option 3 : Connecteur Claude / Assistants d'IA (MCP)
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Intégrez vos CV et biographies directement dans Claude ou d'autres assistants d'IA via le protocole MCP (Model Context Protocol).
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-4 bg-slate-50 border border-slate-150 rounded-xl space-y-3">
+                <p className="text-xs text-slate-600 font-medium">
+                  URL du serveur MCP :
+                </p>
+                <div className="flex items-center gap-2 bg-slate-900 text-slate-100 p-3 rounded-xl font-mono text-[11px] justify-between relative overflow-hidden select-all">
+                  <span>{window.location.origin}/api/mcp</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(window.location.origin + "/api/mcp");
+                      setCopiedMcp(true);
+                      setTimeout(() => setCopiedMcp(false), 2000);
+                    }}
+                    className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg cursor-pointer transition-all flex items-center gap-1 text-xs font-bold shrink-0"
+                  >
+                    {copiedMcp ? (
+                      <>
+                        <Check className="h-3 w-3 text-emerald-500" />
+                        <span className="text-emerald-400 text-[10px]">Copié</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3 w-3" />
+                        <span className="text-[10px]">Copier URL</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2 text-xs text-slate-500 leading-relaxed">
+                <p className="font-bold text-slate-700">Comment l'ajouter à Claude.ai :</p>
+                <ol className="list-decimal pl-4 space-y-1">
+                  <li>Allez dans vos paramètres Claude.ai</li>
+                  <li>Cliquez sur l'onglet <span className="font-semibold text-slate-700">Developer</span> puis <span className="font-semibold text-slate-700">MCP</span></li>
+                  <li>Ajoutez un nouveau serveur avec le nom <span className="font-semibold text-slate-700">EbookStore Afrique</span>, le type <span className="font-semibold text-slate-700">SSE</span>, et l'URL ci-dessus.</li>
+                </ol>
+              </div>
+
+              <div className="pt-2">
+                <a
+                  href={`https://claude.ai/new?mcp=true&url=${encodeURIComponent(window.location.origin + "/api/mcp")}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-xs"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Ajouter le connecteur à Claude</span>
+                </a>
+              </div>
             </div>
           </section>
         </div>
