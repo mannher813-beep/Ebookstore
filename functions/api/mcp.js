@@ -62,28 +62,18 @@ export async function onRequest(context) {
     return null;
   };
 
-  // 1. Handle SSE GET request (establish transport)
+  // 1. Handle GET request (Streamable HTTP Discovery / Ping Info)
   if (request.method === "GET") {
-    const url = new URL(request.url);
-    const sessionId = Math.random().toString(36).substring(2, 15);
-    const postUrl = `${url.pathname}?session_id=${sessionId}`;
-
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      start(controller) {
-        // Send the endpoint event immediately
-        controller.enqueue(encoder.encode(`event: endpoint\ndata: ${postUrl}\n\n`));
-      },
-      cancel() {
-        console.log(`SSE connection closed for session: ${sessionId}`);
+    return new Response(JSON.stringify({
+      message: "EbookStore Afrique MCP Server. Use POST for JSON-RPC 2.0 requests.",
+      protocolVersion: "2024-11-05",
+      endpoints: {
+        post: "/api/mcp"
       }
-    });
-
-    return new Response(stream, {
+    }), {
+      status: 200,
       headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
+        "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*",
       },
     });
