@@ -3,8 +3,8 @@ export async function onRequest(context) {
   const url = new URL(request.url);
   const q = url.searchParams.get("q") || "";
 
-  const supabaseUrl = env.VITE_SUPABASE_URL;
-  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY;
+  const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
+  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
     return new Response(JSON.stringify({ error: "Supabase configuration is missing" }), {
@@ -17,8 +17,8 @@ export async function onRequest(context) {
   }
 
   try {
-    // Select all non-private CVs
-    let dbUrl = `${supabaseUrl}/rest/v1/cvs?visibility=neq.private&select=reference,visibility,summary,data,updated_at`;
+    // Select all non-private CVs including pdf_url
+    let dbUrl = `${supabaseUrl}/rest/v1/cvs?visibility=neq.private&select=reference,visibility,summary,data,pdf_url,updated_at`;
     
     const response = await fetch(dbUrl, {
       method: "GET",
@@ -49,6 +49,7 @@ export async function onRequest(context) {
         reference: cv.reference,
         visibility: cv.visibility,
         summary: cv.summary,
+        pdf_url: cv.pdf_url || "",
         updated_at: cv.updated_at,
         nom: cv.visibility === "anonymous" ? "Anonyme" : (parsedData?.nom || "Non spécifié"),
         titre: parsedData?.titre || "Non spécifié",

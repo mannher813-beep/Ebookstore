@@ -4,8 +4,8 @@ export async function onRequest(context) {
   const q = url.searchParams.get("q") || "";
   const query = q.toLowerCase();
 
-  const supabaseUrl = env.VITE_SUPABASE_URL;
-  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY;
+  const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
+  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
     return new Response(JSON.stringify({ error: "Supabase configuration is missing" }), {
@@ -27,7 +27,7 @@ export async function onRequest(context) {
     // Run fetches in parallel
     const [ebooksRes, cvsRes, biosRes] = await Promise.all([
       fetch(`${supabaseUrl}/rest/v1/ebooks?select=id,titre,description,prix,categorie`, { headers }),
-      fetch(`${supabaseUrl}/rest/v1/cvs?visibility=neq.private&select=reference,visibility,summary,data`, { headers }),
+      fetch(`${supabaseUrl}/rest/v1/cvs?visibility=neq.private&select=reference,visibility,summary,data,pdf_url`, { headers }),
       fetch(`${supabaseUrl}/rest/v1/bios?is_public=eq.true&select=slug,content`, { headers })
     ]);
 
@@ -70,6 +70,7 @@ export async function onRequest(context) {
         titre,
         summary,
         competences,
+        pdf_url: cv.pdf_url || "",
         url: `https://ebookstore-73b.pages.dev/cv/${cv.reference}`
       };
     }).filter(cv => 

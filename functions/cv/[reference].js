@@ -112,7 +112,9 @@ export async function onRequest(context) {
             "jobTitle": titreCandidat,
             "image": photoProfil,
             "description": cvData.summary,
-            "knowsAbout": parsedData.competences || []
+            "knowsAbout": parsedData.competences || [],
+            "publishingPrinciples": cvData.pdf_url || "",
+            "sameAs": cvData.pdf_url ? [cvData.pdf_url] : []
           }
         },
         {
@@ -188,9 +190,17 @@ export async function onRequest(context) {
       </ul>
 
       <p>
-        Ce CV est hébergé publiquement sur EbookStore Afrique. Pour consulter la version interactive et télécharger la version PDF signée, visitez :
+        Ce CV est hébergé publiquement sur EbookStore Afrique. Pour consulter la version interactive, visitez :
         <a href="https://ebookstore-73b.pages.dev/cv/${reference}">https://ebookstore-73b.pages.dev/cv/${reference}</a>
       </p>
+
+      ${cvData.pdf_url ? `
+      <h3>Téléchargement Direct du PDF Officiel</h3>
+      <p>
+        Télécharger directement le document Curriculum Vitae officiel et certifié au format PDF :
+        <a href="${escapeHtml(cvData.pdf_url)}" target="_blank" rel="noopener noreferrer" download="CV_${escapeHtml(nomCandidat)}.pdf">${escapeHtml(cvData.pdf_url)}</a>
+      </p>
+      ` : ""}
     </div>
     `;
   } else {
