@@ -26,8 +26,8 @@ export async function onRequest(context) {
   let hasData = false;
 
   // 3. Fetch specific ebook data from Supabase REST API
-  const supabaseUrl = env.VITE_SUPABASE_URL;
-  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY;
+  const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
+  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY;
 
   if (id && supabaseUrl && supabaseAnonKey) {
     try {

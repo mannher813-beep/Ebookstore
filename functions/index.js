@@ -17,8 +17,8 @@ export async function onRequest(context) {
   }
 
   // 2. Fetch all ebooks from Supabase REST API
-  const supabaseUrl = env.VITE_SUPABASE_URL;
-  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY;
+  const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
+  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY;
   let ebooks = [];
 
   if (supabaseUrl && supabaseAnonKey) {

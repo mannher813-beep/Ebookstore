@@ -27,8 +27,8 @@ export async function onRequest(context) {
   let cvData = null;
 
   // 3. Fetch specific CV data from Supabase REST API
-  const supabaseUrl = env.VITE_SUPABASE_URL;
-  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY;
+  const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
+  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY;
 
   if (reference && supabaseUrl && supabaseAnonKey) {
     try {
@@ -158,7 +158,7 @@ export async function onRequest(context) {
       <h1>Curriculum Vitae de ${escapeHtml(nomCandidat)}</h1>
       <h2>${escapeHtml(titreCandidat)}</h2>
       
-      {photoProfil && <img src="${escapedPhoto}" alt="${escapeHtml(nomCandidat)}" width="150" height="150" />}
+      ${escapedPhoto ? `<img src="${escapedPhoto}" alt="${escapeHtml(nomCandidat)}" width="150" height="150" />` : ""}
       
       <h3>Résumé professionnel</h3>
       <p>${escapeHtml(cvData.summary || "")}</p>
