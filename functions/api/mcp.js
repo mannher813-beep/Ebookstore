@@ -53,7 +53,8 @@ export async function onRequest(context) {
         }
       });
       if (res.ok) {
-        return await res.json();
+        const user = await res.json();
+        return { user, token };
       }
     } catch (err) {
       console.error("Token verification failed:", err);
@@ -407,14 +408,15 @@ export async function onRequest(context) {
           
           else if (name === "creer_cv") {
             // VERIFY TOKEN - REQUIRED for write operation
-            const user = await verifyUserToken();
-            if (!user) {
+            const authData = await verifyUserToken();
+            if (!authData) {
               result = {
                 content: [{ type: "text", text: "Authentification requise" }],
                 isError: true
               };
               break;
             }
+            const { user, token } = authData;
 
             const { nom, titre, competences, experience, formation } = args || {};
             if (!nom || !titre || !competences) {
@@ -441,7 +443,7 @@ export async function onRequest(context) {
             for (let retry = 0; retry < 5; retry++) {
               reference = generateRandomRef();
               const checkRes = await fetch(`${supabaseUrl}/rest/v1/cvs?reference=eq.${reference}&select=reference`, {
-                headers: getSupabaseHeaders()
+                headers: getSupabaseHeaders(token)
               });
               if (checkRes.ok) {
                 const existing = await checkRes.json();
@@ -515,7 +517,7 @@ export async function onRequest(context) {
             const insertRes = await fetch(`${supabaseUrl}/rest/v1/cvs`, {
               method: "POST",
               headers: {
-                ...getSupabaseHeaders(),
+                ...getSupabaseHeaders(token),
                 "Prefer": "return=representation"
               },
               body: JSON.stringify(newCV)
@@ -540,14 +542,15 @@ export async function onRequest(context) {
           
           else if (name === "acheter_ebook") {
             // VERIFY TOKEN - REQUIRED for write operation
-            const user = await verifyUserToken();
-            if (!user) {
+            const authData = await verifyUserToken();
+            if (!authData) {
               result = {
                 content: [{ type: "text", text: "Authentification requise pour effectuer un achat" }],
                 isError: true
               };
               break;
             }
+            const { user } = authData;
 
             const { ebook_id, numero_paiement, nom_client } = args || {};
             if (!ebook_id || !numero_paiement || !nom_client) {
