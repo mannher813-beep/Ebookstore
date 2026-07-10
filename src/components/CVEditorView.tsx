@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { CV, Experience, Formation } from "../types";
 import { supabase } from "../supabaseClient";
 import TagInput from "./TagInput";
@@ -34,6 +34,47 @@ export default function CVEditorView({
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(cv.data.photo || null);
+
+  // Convert remote image url to base64 for reliable, non-tainted html2canvas rendering
+  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!photo) {
+      setPhotoBase64(null);
+      return;
+    }
+
+    if (photo.startsWith("data:") || photo.startsWith("blob:")) {
+      setPhotoBase64(photo);
+      return;
+    }
+
+    let isMounted = true;
+    const loadAndConvert = async () => {
+      try {
+        const response = await fetch(photo, { mode: "cors" });
+        if (!response.ok) throw new Error("Fetch failed with status " + response.status);
+        const blob = await response.blob();
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (isMounted) {
+            setPhotoBase64(reader.result as string);
+          }
+        };
+        reader.readAsDataURL(blob);
+      } catch (err) {
+        console.warn("CORS/Fetch failed for photo Base64 conversion, using fallback URL:", err);
+        if (isMounted) {
+          setPhotoBase64(photo);
+        }
+      }
+    };
+
+    loadAndConvert();
+    return () => {
+      isMounted = false;
+    };
+  }, [photo]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -657,9 +698,10 @@ export default function CVEditorView({
                 </div>
                 {photo ? (
                   <img
-                    src={photo}
+                    src={photoBase64 || photo}
                     alt={nom}
                     referrerPolicy="no-referrer"
+                    crossOrigin="anonymous"
                     className="w-16 h-16 rounded-full object-cover border border-slate-200"
                     onError={(e) => {
                       (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150";

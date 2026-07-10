@@ -5,6 +5,8 @@ export async function onRequest(context) {
   const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY;
 
   let ebooks = [];
+  let cvs = [];
+  let bios = [];
   if (supabaseUrl && supabaseAnonKey) {
     try {
       const dbUrl = `${supabaseUrl}/rest/v1/ebooks?select=id,created_at&order=created_at.desc`;
@@ -22,6 +24,42 @@ export async function onRequest(context) {
       }
     } catch (err) {
       console.error("Failed to fetch ebooks for sitemap:", err);
+    }
+
+    try {
+      const cvsUrl = `${supabaseUrl}/rest/v1/cvs?visibility=neq.private&select=reference,updated_at`;
+      const response = await fetch(cvsUrl, {
+        method: "GET",
+        headers: {
+          "apikey": supabaseAnonKey,
+          "Authorization": `Bearer ${supabaseAnonKey}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        cvs = await response.json();
+      }
+    } catch (err) {
+      console.error("Failed to fetch CVs for sitemap:", err);
+    }
+
+    try {
+      const biosUrl = `${supabaseUrl}/rest/v1/bios?is_public=eq.true&select=slug,updated_at`;
+      const response = await fetch(biosUrl, {
+        method: "GET",
+        headers: {
+          "apikey": supabaseAnonKey,
+          "Authorization": `Bearer ${supabaseAnonKey}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        bios = await response.json();
+      }
+    } catch (err) {
+      console.error("Failed to fetch Bios for sitemap:", err);
     }
   }
 
@@ -48,6 +86,34 @@ export async function onRequest(context) {
     <lastmod>${lastmod}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
+  </url>
+`;
+    }
+  }
+
+  // Dynamic CV pages
+  for (const cv of cvs) {
+    if (cv.reference) {
+      const lastmod = cv.updated_at ? cv.updated_at.split("T")[0] : currentDate;
+      xml += `  <url>
+    <loc>https://ebookstore-73b.pages.dev/cv/${cv.reference}</loc>
+    <lastmod>${lastmod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+`;
+    }
+  }
+
+  // Dynamic Bio pages
+  for (const bio of bios) {
+    if (bio.slug) {
+      const lastmod = bio.updated_at ? bio.updated_at.split("T")[0] : currentDate;
+      xml += `  <url>
+    <loc>https://ebookstore-73b.pages.dev/bio/${bio.slug}</loc>
+    <lastmod>${lastmod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
   </url>
 `;
     }

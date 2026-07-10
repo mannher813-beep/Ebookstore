@@ -34,6 +34,15 @@ EbookStore Afrique intègre un programme d'affiliation lucratif permettant à no
 
 ---
 
+## 💼 Profils Professionnels, CVs et Biographies (Mon Espace CV)
+EbookStore Afrique permet également aux professionnels de la tech de concevoir, partager et référencer des portfolios :
+- **CV Interactifs Publics** : Accessibles publiquement à l'adresse `/cv/[reference]` (ex : `https://ebookstore-73b.pages.dev/cv/CV-2026-1632` pour Hermann Lana). Ces profils contiennent les compétences, formations, expériences et résumés rédigés par les candidats et sont optimisés pour les moteurs de recherche et agents d'IA.
+- **Biographies Professionnelles** : Disponibles sous le format `/bio/[slug]` (ex : `https://ebookstore-73b.pages.dev/bio/hermann-lana`). Elles présentent l'utilisateur de manière plus rédigée sous format Markdown.
+
+Ces ressources sont dynamiquement indexées dans notre sitemap (https://ebookstore-73b.pages.dev/sitemap.xml) dès que leur visibilité est publique.
+
+---
+
 ## 🔗 Liens Utiles
 - **Page d'Accueil & Catalogue** : https://ebookstore-73b.pages.dev/
 - **Mentions Légales** : https://ebookstore-73b.pages.dev/mentions-legales

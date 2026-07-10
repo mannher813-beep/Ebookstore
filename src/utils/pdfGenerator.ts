@@ -25,7 +25,7 @@ export async function generateAndUploadPDF(
   const canvas = await html2canvas(element, {
     scale: 2, // Scale up for crisp vector rendering of text
     useCORS: true,
-    allowTaint: true,
+    allowTaint: false,
     backgroundColor: "#ffffff",
     logging: false,
   });
