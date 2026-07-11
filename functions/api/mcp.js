@@ -57,15 +57,31 @@ export async function onRequest(context) {
         return { user, token };
       }
     } catch (err) {
-      console.error("Token verification failed:", err);
+      console.error("Token verification failed in MCP:", err);
     }
     return null;
   };
 
-  // 1. Handle GET request (Streamable HTTP Discovery / Ping Info)
+  // Helper to retrieve user profile role
+  const getUserRole = async (userId, token) => {
+    try {
+      const res = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${userId}&select=role`, {
+        headers: getSupabaseHeaders(token)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data[0]?.role || "user";
+      }
+    } catch (e) {
+      console.error("Error fetching user role:", e);
+    }
+    return "user";
+  };
+
+  // GET: modern Streamable HTTP Discovery
   if (request.method === "GET") {
     return new Response(JSON.stringify({
-      message: "EbookStore Afrique MCP Server. Use POST for JSON-RPC 2.0 requests.",
+      message: "Recruitment Africa MCP Server (Streamable HTTP)",
       protocolVersion: "2024-11-05",
       endpoints: {
         post: "/api/mcp"
@@ -79,7 +95,7 @@ export async function onRequest(context) {
     });
   }
 
-  // 2. Handle POST request (JSON-RPC 2.0 messages)
+  // POST: JSON-RPC 2.0 messages
   if (request.method === "POST") {
     try {
       const body = await request.json();
@@ -96,7 +112,6 @@ export async function onRequest(context) {
         });
       }
 
-      // Handler for JSON-RPC methods
       let result = null;
       let error = null;
 
@@ -108,7 +123,7 @@ export async function onRequest(context) {
               tools: {}
             },
             serverInfo: {
-              name: "EbookStore Afrique MCP Server",
+              name: "Recruitment Africa MCP Server",
               version: "1.0.0"
             }
           };
@@ -123,113 +138,239 @@ export async function onRequest(context) {
             tools: [
               {
                 name: "rechercher_cv",
-                description: "Recherche des CV publics par compétences, titre, nom ou résumé. Limité à 20 résultats.",
+                description: "Recherche des CV publics par mot-clé et filtres (secteur, lieu, compétences, etc.).",
                 inputSchema: {
                   type: "object",
                   properties: {
-                    query: {
-                      type: "string",
-                      description: "Terme de recherche (ex: développeur, React, compétences...)"
-                    }
-                  },
-                  required: ["query"]
+                    query: { type: "string", description: "Mot-clé de recherche" },
+                    secteur: { type: "string", description: "Filtre par secteur d'activité" },
+                    lieu: { type: "string", description: "Filtre par ville ou lieu" },
+                    disponible: { type: "boolean", description: "Candidat immédiatement disponible" }
+                  }
                 }
               },
               {
                 name: "obtenir_cv",
-                description: "Récupère le détail complet d'un CV public à partir de sa référence unique.",
+                description: "Affiche le détail complet d'un CV en respectant sa visibilité (public/anonyme).",
                 inputSchema: {
                   type: "object",
                   properties: {
-                    reference: {
-                      type: "string",
-                      description: "La référence unique du CV (ex: CV-2026-X8F9)"
-                    }
-                  },
-                  required: ["reference"]
-                }
-              },
-              {
-                name: "obtenir_bio",
-                description: "Récupère le détail complet d'une biographie publique à partir de son slug unique.",
-                inputSchema: {
-                  type: "object",
-                  properties: {
-                    slug: {
-                      type: "string",
-                      description: "Le slug unique de la biographie (ex: jean-dupont-421)"
-                    }
-                  },
-                  required: ["slug"]
-                }
-              },
-              {
-                name: "telecharger_pdf",
-                description: "Récupère le lien de téléchargement PDF public d'un CV.",
-                inputSchema: {
-                  type: "object",
-                  properties: {
-                    reference: {
-                      type: "string",
-                      description: "La référence unique du CV"
-                    }
+                    reference: { type: "string", description: "Référence unique du CV" }
                   },
                   required: ["reference"]
                 }
               },
               {
                 name: "creer_cv",
-                description: "Crée un nouveau CV en mode privé pour l'utilisateur connecté. Nécessite un jeton d'authentification valide (JWT) de l'utilisateur.",
+                description: "Crée le CV de l'utilisateur connecté (authentifié par jeton JWT).",
                 inputSchema: {
                   type: "object",
                   properties: {
-                    nom: {
-                      type: "string",
-                      description: "Nom complet du candidat"
-                    },
-                    titre: {
-                      type: "string",
-                      description: "Titre professionnel (ex: Développeur Fullstack React)"
-                    },
-                    competences: {
-                      type: "array",
-                      items: {
-                        type: "string"
-                      },
-                      description: "Liste de compétences clés"
-                    },
-                    experience: {
-                      type: "string",
-                      description: "Description de l'expérience professionnelle (texte ou liste)"
-                    },
-                    formation: {
-                      type: "string",
-                      description: "Description de la formation (texte ou liste)"
-                    }
+                    nom: { type: "string", description: "Nom complet" },
+                    titre: { type: "string", description: "Titre du poste visé" },
+                    competences: { type: "array", items: { type: "string" }, description: "Liste des compétences" },
+                    experiences: { type: "array", items: { type: "object" }, description: "Expériences professionnelles" },
+                    formation: { type: "array", items: { type: "object" }, description: "Formations/diplômes" },
+                    summary: { type: "string", description: "Accroche/Résumé professionnel" },
+                    is_public: { type: "boolean", description: "Rendre le CV public" },
+                    visibility: { type: "string", enum: ["private", "public", "anonymous"], description: "Type de visibilité" }
                   },
                   required: ["nom", "titre", "competences"]
                 }
               },
               {
-                name: "acheter_ebook",
-                description: "Initié un achat d'ebook et génère un lien de paiement sécurisé. Nécessite un jeton d'authentification valide (JWT).",
+                name: "mettre_a_jour_cv",
+                description: "Met à jour un CV existant de l'utilisateur connecté.",
                 inputSchema: {
                   type: "object",
                   properties: {
-                    ebook_id: {
-                      type: "string",
-                      description: "L'identifiant unique de l'ebook à acheter"
-                    },
-                    numero_paiement: {
-                      type: "string",
-                      description: "Le numéro de téléphone pour le paiement (ex: 2250700000000)"
-                    },
-                    nom_client: {
-                      type: "string",
-                      description: "Le nom complet du client"
-                    }
+                    reference: { type: "string", description: "Référence du CV à éditer" },
+                    nom: { type: "string" },
+                    titre: { type: "string" },
+                    competences: { type: "array", items: { type: "string" } },
+                    experiences: { type: "array", items: { type: "object" } },
+                    formation: { type: "array", items: { type: "object" } },
+                    summary: { type: "string" },
+                    visibility: { type: "string", enum: ["private", "public", "anonymous"] }
                   },
-                  required: ["ebook_id", "numero_paiement", "nom_client"]
+                  required: ["reference"]
+                }
+              },
+              {
+                name: "rechercher_bio",
+                description: "Recherche des biographies de candidats publics.",
+                inputSchema: {
+                  type: "object",
+                  properties: {
+                    query: { type: "string" },
+                    lieu: { type: "string" },
+                    secteur: { type: "string" }
+                  }
+                }
+              },
+              {
+                name: "obtenir_bio",
+                description: "Récupère le contenu d'une biographie par son slug.",
+                inputSchema: {
+                  type: "object",
+                  properties: {
+                    slug: { type: "string" }
+                  },
+                  required: ["slug"]
+                }
+              },
+              {
+                name: "creer_bio",
+                description: "Crée la biographie de l'utilisateur connecté.",
+                inputSchema: {
+                  type: "object",
+                  properties: {
+                    slug: { type: "string", description: "Slug d'URL unique" },
+                    content: { type: "string", description: "Contenu rédigé" },
+                    is_public: { type: "boolean" },
+                    secteur: { type: "string" },
+                    lieu: { type: "string" }
+                  },
+                  required: ["slug", "content"]
+                }
+              },
+              {
+                name: "telecharger_pdf",
+                description: "Obtient le lien de téléchargement PDF d'un CV.",
+                inputSchema: {
+                  type: "object",
+                  properties: {
+                    reference: { type: "string" }
+                  },
+                  required: ["reference"]
+                }
+              },
+              {
+                name: "sauvegarder_favori",
+                description: "Sauvegarde un favori (cv, bio ou job_offer) pour l'utilisateur connecté.",
+                inputSchema: {
+                  type: "object",
+                  properties: {
+                    item_type: { type: "string", enum: ["cv", "bio", "job_offer"] },
+                    item_id: { type: "string" }
+                  },
+                  required: ["item_type", "item_id"]
+                }
+              },
+              {
+                name: "lister_favoris",
+                description: "Liste tous les favoris sauvegardés par l'utilisateur connecté.",
+                inputSchema: { type: "object", properties: {} }
+              },
+              {
+                name: "publier_offre",
+                description: "Publie une nouvelle offre d'emploi. Nécessite d'être un recruteur vérifié.",
+                inputSchema: {
+                  type: "object",
+                  properties: {
+                    titre: { type: "string" },
+                    description: { type: "string" },
+                    entreprise: { type: "string" },
+                    lieu: { type: "string" },
+                    secteur: { type: "string" },
+                    type_contrat: { type: "string", enum: ["cdi", "cdd", "stage", "freelance", "temps_partiel", "alternance"] },
+                    remote: { type: "boolean" },
+                    salaire_min: { type: "number" },
+                    salaire_max: { type: "number" },
+                    devise: { type: "string" },
+                    competences: { type: "array", items: { type: "string" } }
+                  },
+                  required: ["titre", "description", "entreprise", "lieu", "secteur", "type_contrat"]
+                }
+              },
+              {
+                name: "generer_offre_ia",
+                description: "Fait appel à l'IA pour générer une offre à partir de points bruts.",
+                inputSchema: {
+                  type: "object",
+                  properties: {
+                    points_bruts: { type: "string" },
+                    poste: { type: "string" },
+                    entreprise: { type: "string" }
+                  },
+                  required: ["points_bruts", "poste", "entreprise"]
+                }
+              },
+              {
+                name: "rechercher_offres",
+                description: "Recherche des offres d'emploi actives.",
+                inputSchema: {
+                  type: "object",
+                  properties: {
+                    query: { type: "string" },
+                    lieu: { type: "string" },
+                    secteur: { type: "string" },
+                    type_contrat: { type: "string" },
+                    remote: { type: "boolean" }
+                  }
+                }
+              },
+              {
+                name: "obtenir_offre",
+                description: "Détail complet d'une offre d'emploi.",
+                inputSchema: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string" }
+                  },
+                  required: ["id"]
+                }
+              },
+              {
+                name: "postuler_offre",
+                description: "Postule à une offre avec un CV ou une Bio.",
+                inputSchema: {
+                  type: "object",
+                  properties: {
+                    job_offer_id: { type: "string" },
+                    cv_id: { type: "string" },
+                    bio_id: { type: "string" },
+                    message: { type: "string" }
+                  },
+                  required: ["job_offer_id"]
+                }
+              },
+              {
+                name: "lister_candidatures",
+                description: "Liste les candidatures reçues (Réservé au recruteur auteur de l'offre).",
+                inputSchema: {
+                  type: "object",
+                  properties: {
+                    job_offer_id: { type: "string" }
+                  },
+                  required: ["job_offer_id"]
+                }
+              },
+              {
+                name: "signaler_offre",
+                description: "Signale une offre suspecte.",
+                inputSchema: {
+                  type: "object",
+                  properties: {
+                    job_offer_id: { type: "string" },
+                    raison: { type: "string" }
+                  },
+                  required: ["job_offer_id", "raison"]
+                }
+              },
+              {
+                name: "booster_post",
+                description: "Initie un paiement MoneyFusion de Boost pour un CV, une Bio ou une Offre.",
+                inputSchema: {
+                  type: "object",
+                  properties: {
+                    target_type: { type: "string", enum: ["cv", "bio", "job_offer"] },
+                    target_id: { type: "string" },
+                    numeroSend: { type: "string" },
+                    nomclient: { type: "string" },
+                    montant: { type: "number" }
+                  },
+                  required: ["target_type", "target_id", "numeroSend", "nomclient", "montant"]
                 }
               }
             ]
@@ -238,270 +379,92 @@ export async function onRequest(context) {
 
         case "tools/call": {
           const { name, arguments: args } = params || {};
+          const authData = await verifyUserToken();
 
           if (name === "rechercher_cv") {
-            const q = (args?.query || "").trim().toLowerCase();
-            const headers = getSupabaseHeaders();
-            const res = await fetch(`${supabaseUrl}/rest/v1/cvs?is_public=eq.true&select=reference,visibility,summary,data`, { headers });
-            
+            const { query, secteur, lieu, disponible } = args || {};
+            let dbUrl = `${supabaseUrl}/rest/v1/cvs?visibility=neq.private&select=*`;
+            if (secteur) dbUrl += `&secteur=eq.${encodeURIComponent(secteur)}`;
+            if (lieu) dbUrl += `&lieu=eq.${encodeURIComponent(lieu)}`;
+            if (disponible !== undefined) dbUrl += `&disponible=eq.${disponible}`;
+
+            const res = await fetch(dbUrl, { headers: getSupabaseHeaders() });
             if (res.ok) {
-              const cvs = await res.json();
-              const filtered = cvs.map(cv => {
-                const parsedData = typeof cv.data === "string" ? JSON.parse(cv.data) : cv.data;
-                const isAnon = cv.visibility === "anonymous";
-                const nom = isAnon ? "Profil Anonyme" : (parsedData?.nom || "Non spécifié");
-                const titre = parsedData?.titre || "Non spécifié";
-                const competences = parsedData?.competences || [];
-                const summary = cv.summary || "";
-
-                const matchStr = [cv.reference, nom, titre, summary, ...competences].join(" ").toLowerCase();
-                if (matchStr.includes(q)) {
-                  return {
-                    reference: cv.reference,
-                    nom,
-                    titre,
-                    resume_court: summary.length > 150 ? summary.substring(0, 150) + "..." : summary
-                  };
-                }
-                return null;
-              }).filter(Boolean).slice(0, 20);
-
-              result = {
-                content: [{ type: "text", text: JSON.stringify(filtered, null, 2) }],
-                isError: false
-              };
+              let list = await res.json();
+              if (query) {
+                const qLower = query.toLowerCase();
+                list = list.filter(cv => 
+                  cv.summary?.toLowerCase().includes(qLower) ||
+                  cv.reference?.toLowerCase().includes(qLower) ||
+                  JSON.stringify(cv.data).toLowerCase().includes(qLower)
+                );
+              }
+              // Format results to respect anonymity
+              const cleanList = list.map(cv => ({
+                reference: cv.reference,
+                summary: cv.summary,
+                disponible: cv.disponible,
+                annees_experience: cv.annees_experience,
+                titre: cv.data?.titre || cv.titre_poste || "Candidat",
+                competences: cv.data?.competences || cv.competences || [],
+                nom: cv.visibility === "anonymous" ? "Anonyme" : (cv.data?.nom || "Candidat"),
+                is_boosted: cv.is_boosted
+              }));
+              result = { content: [{ type: "text", text: JSON.stringify(cleanList, null, 2) }] };
             } else {
-              result = {
-                content: [{ type: "text", text: "Erreur lors de la recherche des CVs publics dans la base de données." }],
-                isError: true
-              };
+              result = { content: [{ type: "text", text: "Erreur lors de la récupération des CV." }], isError: true };
             }
-          } 
-          
+          }
+
           else if (name === "obtenir_cv") {
-            const ref = args?.reference;
-            if (!ref) {
-              result = { content: [{ type: "text", text: "Paramètre 'reference' manquant." }], isError: true };
-              break;
-            }
-
-            const headers = getSupabaseHeaders();
-            const res = await fetch(`${supabaseUrl}/rest/v1/cvs?reference=eq.${ref}&is_public=eq.true&select=*`, { headers });
-            
+            const { reference } = args || {};
+            const res = await fetch(`${supabaseUrl}/rest/v1/cvs?reference=eq.${reference}&select=*`, { headers: getSupabaseHeaders() });
             if (res.ok) {
               const data = await res.json();
-              if (data && data.length > 0) {
-                const cv = data[0];
-                const parsedData = typeof cv.data === "string" ? JSON.parse(cv.data) : cv.data;
-                let finalNom = parsedData?.nom || "Non spécifié";
-
-                if (cv.visibility === "anonymous") {
-                  const parts = finalNom.trim().split(/\s+/);
-                  const firstName = parts[0] || "Prénom";
-                  finalNom = `${firstName} (Profil Anonyme)`;
-                }
-
-                const resultData = {
-                  reference: cv.reference,
-                  nom: finalNom,
-                  titre: parsedData?.titre || "Non spécifié",
-                  competences: parsedData?.competences || [],
-                  experiences: parsedData?.experiences || [],
-                  formation: parsedData?.formation || [],
-                  summary: cv.summary || "",
-                  pdf_url: cv.pdf_url || ""
-                };
-
-                result = {
-                  content: [{ type: "text", text: JSON.stringify(resultData, null, 2) }],
-                  isError: false
-                };
+              if (data.length === 0) {
+                result = { content: [{ type: "text", text: "CV introuvable." }], isError: true };
               } else {
-                result = {
-                  content: [{ type: "text", text: "CV introuvable ou non public" }],
-                  isError: false // Return error friendly text without throwing JSON-RPC protocol error
-                };
-              }
-            } else {
-              result = { content: [{ type: "text", text: "Erreur lors de la récupération du CV." }], isError: true };
-            }
-          } 
-          
-          else if (name === "obtenir_bio") {
-            const slug = args?.slug;
-            if (!slug) {
-              result = { content: [{ type: "text", text: "Paramètre 'slug' manquant." }], isError: true };
-              break;
-            }
-
-            const headers = getSupabaseHeaders();
-            const res = await fetch(`${supabaseUrl}/rest/v1/bios?slug=eq.${slug}&is_public=eq.true&select=*`, { headers });
-            
-            if (res.ok) {
-              const data = await res.json();
-              if (data && data.length > 0) {
-                const bio = data[0];
-                const resultData = {
-                  slug: bio.slug,
-                  content: bio.content || ""
-                };
-                result = {
-                  content: [{ type: "text", text: JSON.stringify(resultData, null, 2) }],
-                  isError: false
-                };
-              } else {
-                result = {
-                  content: [{ type: "text", text: "Biographie introuvable ou non publique" }],
-                  isError: false
-                };
-              }
-            } else {
-              result = { content: [{ type: "text", text: "Erreur lors de la récupération de la biographie." }], isError: true };
-            }
-          } 
-          
-          else if (name === "telecharger_pdf") {
-            const ref = args?.reference;
-            if (!ref) {
-              result = { content: [{ type: "text", text: "Paramètre 'reference' manquant." }], isError: true };
-              break;
-            }
-
-            const headers = getSupabaseHeaders();
-            const res = await fetch(`${supabaseUrl}/rest/v1/cvs?reference=eq.${ref}&is_public=eq.true&select=pdf_url`, { headers });
-            
-            if (res.ok) {
-              const data = await res.json();
-              if (data && data.length > 0) {
                 const cv = data[0];
-                if (cv.pdf_url) {
-                  result = {
-                    content: [{ type: "text", text: `Voici l'URL de téléchargement PDF : ${cv.pdf_url}` }],
-                    isError: false
-                  };
+                if (cv.visibility === "private" && (!authData || authData.user.id !== cv.user_id)) {
+                  result = { content: [{ type: "text", text: "Ce CV est privé." }], isError: true };
                 } else {
-                  result = {
-                    content: [{ type: "text", text: "PDF non disponible pour ce CV" }],
-                    isError: false
-                  };
+                  if (cv.visibility === "anonymous") {
+                    if (cv.data) cv.data.nom = "Anonyme";
+                  }
+                  result = { content: [{ type: "text", text: JSON.stringify(cv, null, 2) }] };
                 }
-              } else {
-                result = {
-                  content: [{ type: "text", text: "CV introuvable ou non public" }],
-                  isError: false
-                };
               }
             } else {
-              result = { content: [{ type: "text", text: "Erreur lors de la recherche du PDF." }], isError: true };
+              result = { content: [{ type: "text", text: "Erreur de base de données." }], isError: true };
             }
-          } 
-          
+          }
+
           else if (name === "creer_cv") {
-            // VERIFY TOKEN - REQUIRED for write operation
-            const authData = await verifyUserToken();
             if (!authData) {
-              result = {
-                content: [{ type: "text", text: "Authentification requise" }],
-                isError: true
-              };
+              result = { content: [{ type: "text", text: "Authentification requise" }], isError: true };
               break;
             }
             const { user, token } = authData;
+            const { nom, titre, competences, experiences, formation, summary, visibility } = args || {};
 
-            const { nom, titre, competences, experience, formation } = args || {};
-            if (!nom || !titre || !competences) {
-              result = {
-                content: [{ type: "text", text: "Informations manquantes. Les champs 'nom', 'titre' et 'competences' sont obligatoires." }],
-                isError: true
-              };
-              break;
-            }
-
-            // Generate unique reference
-            const generateRandomRef = () => {
-              const year = new Date().getFullYear();
-              const chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-              let randomPart = "";
-              for (let i = 0; i < 4; i++) {
-                randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
-              }
-              return `CV-${year}-${randomPart}`;
-            };
-
-            let reference = "";
-            let unique = false;
-            for (let retry = 0; retry < 5; retry++) {
-              reference = generateRandomRef();
-              const checkRes = await fetch(`${supabaseUrl}/rest/v1/cvs?reference=eq.${reference}&select=reference`, {
-                headers: getSupabaseHeaders(token)
-              });
-              if (checkRes.ok) {
-                const existing = await checkRes.json();
-                if (existing.length === 0) {
-                  unique = true;
-                  break;
-                }
-              }
-            }
-
-            if (!unique) {
-              result = {
-                content: [{ type: "text", text: "Impossible de générer une référence de CV unique après plusieurs essais." }],
-                isError: true
-              };
-              break;
-            }
-
-            // Map experiences and formations
-            let experiences = [];
-            if (typeof experience === "string" && experience) {
-              experiences = [{ entreprise: "", poste: experience, date_debut: "", date_fin: "", description: "" }];
-            } else if (Array.isArray(experience)) {
-              experiences = experience.map(exp => {
-                if (typeof exp === "string") {
-                  return { entreprise: "", poste: exp, date_debut: "", date_fin: "", description: "" };
-                }
-                return {
-                  entreprise: exp.entreprise || "",
-                  poste: exp.poste || "",
-                  date_debut: exp.date_debut || "",
-                  date_fin: exp.date_fin || "",
-                  description: exp.description || ""
-                };
-              });
-            }
-
-            let formations = [];
-            if (typeof formation === "string" && formation) {
-              formations = [{ ecole: "", diplome: formation, annee: "" }];
-            } else if (Array.isArray(formation)) {
-              formations = formation.map(f => {
-                if (typeof f === "string") {
-                  return { ecole: "", diplome: f, annee: "" };
-                }
-                return {
-                  ecole: f.ecole || f.school || "",
-                  diplome: f.diplome || f.degree || "",
-                  annee: f.annee || f.year || ""
-                };
-              });
-            }
-
-            const newCV = {
+            const reference = "CV-" + new Date().getFullYear() + "-" + Math.random().toString(36).substring(2, 6).toUpperCase();
+            const cvPayload = {
               user_id: user.id,
               reference,
               data: {
                 nom,
                 titre,
-                photo: "",
-                competences: Array.isArray(competences) ? competences : [],
-                experiences,
-                formation: formations
+                competences: competences || [],
+                experiences: experiences || [],
+                formation: formation || []
               },
-              summary: "",
+              summary: summary || "",
               pdf_url: "",
-              is_public: false, // Strict requirement: always false on create via MCP
-              visibility: "private" // Strict requirement: always private on create via MCP
+              is_public: visibility === "public" || visibility === "anonymous",
+              visibility: visibility || "private",
+              titre_poste: titre,
+              competences: competences || [],
+              created_at: new Date().toISOString()
             };
 
             const insertRes = await fetch(`${supabaseUrl}/rest/v1/cvs`, {
@@ -510,96 +473,413 @@ export async function onRequest(context) {
                 ...getSupabaseHeaders(token),
                 "Prefer": "return=representation"
               },
-              body: JSON.stringify(newCV)
+              body: JSON.stringify(cvPayload)
             });
 
             if (insertRes.ok) {
-              result = {
-                content: [{ 
-                  type: "text", 
-                  text: `Félicitations ! Votre CV a bien été créé en mode privé avec la référence : ${reference}\n\nMessage de confirmation : CV créé en mode privé. Connectez-vous sur ebookstore-73b.pages.dev/dashboard pour le personnaliser et le publier si vous le souhaitez.` 
-                }],
-                isError: false
-              };
+              result = { content: [{ type: "text", text: `CV créé avec succès ! Référence : ${reference}` }] };
             } else {
               const errText = await insertRes.text();
-              result = {
-                content: [{ type: "text", text: `Échec de l'insertion dans la base de données : ${errText}` }],
-                isError: true
-              };
+              result = { content: [{ type: "text", text: `Échec : ${errText}` }], isError: true };
             }
-          } 
-          
-          else if (name === "acheter_ebook") {
-            // VERIFY TOKEN - REQUIRED for write operation
-            const authData = await verifyUserToken();
+          }
+
+          else if (name === "mettre_a_jour_cv") {
             if (!authData) {
-              result = {
-                content: [{ type: "text", text: "Authentification requise pour effectuer un achat" }],
-                isError: true
-              };
+              result = { content: [{ type: "text", text: "Authentification requise" }], isError: true };
+              break;
+            }
+            const { user, token } = authData;
+            const { reference, nom, titre, competences, experiences, formation, summary, visibility } = args || {};
+
+            // Check ownership
+            const checkRes = await fetch(`${supabaseUrl}/rest/v1/cvs?reference=eq.${reference}&select=user_id`, { headers: getSupabaseHeaders() });
+            if (!checkRes.ok) {
+              result = { content: [{ type: "text", text: "CV introuvable." }], isError: true };
+              break;
+            }
+            const checkData = await checkRes.json();
+            if (checkData.length === 0 || checkData[0].user_id !== user.id) {
+              result = { content: [{ type: "text", text: "Vous n'êtes pas propriétaire de ce CV." }], isError: true };
+              break;
+            }
+
+            const updatedPayload = {
+              data: {
+                nom,
+                titre,
+                competences: competences || [],
+                experiences: experiences || [],
+                formation: formation || []
+              },
+              summary: summary || "",
+              is_public: visibility === "public" || visibility === "anonymous",
+              visibility: visibility || "private",
+              titre_poste: titre,
+              competences: competences || [],
+              updated_at: new Date().toISOString()
+            };
+
+            const updateRes = await fetch(`${supabaseUrl}/rest/v1/cvs?reference=eq.${reference}`, {
+              method: "PATCH",
+              headers: getSupabaseHeaders(token),
+              body: JSON.stringify(updatedPayload)
+            });
+
+            if (updateRes.ok) {
+              result = { content: [{ type: "text", text: "CV mis à jour avec succès !" }] };
+            } else {
+              result = { content: [{ type: "text", text: "Échec de la mise à jour." }], isError: true };
+            }
+          }
+
+          else if (name === "rechercher_bio") {
+            const { query, lieu, secteur } = args || {};
+            let dbUrl = `${supabaseUrl}/rest/v1/bios?is_public=eq.true&select=*`;
+            if (lieu) dbUrl += `&lieu=eq.${encodeURIComponent(lieu)}`;
+            if (secteur) dbUrl += `&secteur=eq.${encodeURIComponent(secteur)}`;
+
+            const res = await fetch(dbUrl, { headers: getSupabaseHeaders() });
+            if (res.ok) {
+              let list = await res.json();
+              if (query) {
+                const qL = query.toLowerCase();
+                list = list.filter(b => b.content?.toLowerCase().includes(qL));
+              }
+              result = { content: [{ type: "text", text: JSON.stringify(list, null, 2) }] };
+            } else {
+              result = { content: [{ type: "text", text: "Erreur" }], isError: true };
+            }
+          }
+
+          else if (name === "obtenir_bio") {
+            const { slug } = args || {};
+            const res = await fetch(`${supabaseUrl}/rest/v1/bios?slug=eq.${slug}&select=*`, { headers: getSupabaseHeaders() });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.length === 0) {
+                result = { content: [{ type: "text", text: "Biographie introuvable." }], isError: true };
+              } else {
+                result = { content: [{ type: "text", text: JSON.stringify(data[0], null, 2) }] };
+              }
+            } else {
+              result = { content: [{ type: "text", text: "Erreur" }], isError: true };
+            }
+          }
+
+          else if (name === "creer_bio") {
+            if (!authData) {
+              result = { content: [{ type: "text", text: "Authentification requise." }], isError: true };
+              break;
+            }
+            const { user, token } = authData;
+            const { slug, content, is_public, secteur, lieu } = args || {};
+
+            const bioPayload = {
+              id: user.id,
+              user_id: user.id,
+              slug,
+              content,
+              is_public: !!is_public,
+              secteur,
+              lieu,
+              created_at: new Date().toISOString()
+            };
+
+            const insertRes = await fetch(`${supabaseUrl}/rest/v1/bios`, {
+              method: "POST",
+              headers: {
+                ...getSupabaseHeaders(token),
+                "Prefer": "return=representation"
+              },
+              body: JSON.stringify(bioPayload)
+            });
+
+            if (insertRes.ok) {
+              result = { content: [{ type: "text", text: "Biographie créée avec succès !" }] };
+            } else {
+              result = { content: [{ type: "text", text: "Échec de création de la biographie." }], isError: true };
+            }
+          }
+
+          else if (name === "publier_offre") {
+            if (!authData) {
+              result = { content: [{ type: "text", text: "Authentification requise." }], isError: true };
+              break;
+            }
+            const { user, token } = authData;
+            const role = await getUserRole(user.id, token);
+
+            if (role !== "recruiter" && role !== "admin") {
+              result = { content: [{ type: "text", text: "Seuls les recruteurs peuvent publier des offres." }], isError: true };
+              break;
+            }
+
+            // Check company status
+            const compRes = await fetch(`${supabaseUrl}/rest/v1/recruiter_profiles?id=eq.${user.id}&select=verification_status`, { headers: getSupabaseHeaders() });
+            const compData = await compRes.json();
+            if (compData.length === 0 || compData[0].verification_status !== "verified") {
+              result = { content: [{ type: "text", text: "Votre entreprise doit être vérifiée pour publier des offres d'emploi publiques." }], isError: true };
+              break;
+            }
+
+            const { titre, description, entreprise, lieu, secteur, type_contrat, remote, salaire_min, salaire_max, devise, competences } = args || {};
+            const cleanSlug = titre.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + Math.random().toString(36).substring(2, 6);
+
+            const offerPayload = {
+              recruiter_id: user.id,
+              titre,
+              slug: cleanSlug,
+              description,
+              entreprise,
+              lieu,
+              secteur,
+              type_contrat,
+              remote: !!remote,
+              salaire_min,
+              salaire_max,
+              devise: devise || "XAF",
+              competences: competences || [],
+              statut: "active",
+              moderation_status: "pending", // Always starts in pending
+              vues: 0,
+              created_at: new Date().toISOString()
+            };
+
+            const publishRes = await fetch(`${supabaseUrl}/rest/v1/job_offers`, {
+              method: "POST",
+              headers: getSupabaseHeaders(token),
+              body: JSON.stringify(offerPayload)
+            });
+
+            if (publishRes.ok) {
+              result = { content: [{ type: "text", text: "Offre d'emploi publiée ! Elle est actuellement en attente de modération." }] };
+            } else {
+              result = { content: [{ type: "text", text: "Échec de publication de l'offre." }], isError: true };
+            }
+          }
+
+          else if (name === "rechercher_offres") {
+            const { query, lieu, secteur, type_contrat, remote } = args || {};
+            let dbUrl = `${supabaseUrl}/rest/v1/job_offers?statut=eq.active&moderation_status=eq.approved&select=*`;
+            if (lieu) dbUrl += `&lieu=eq.${encodeURIComponent(lieu)}`;
+            if (secteur) dbUrl += `&secteur=eq.${encodeURIComponent(secteur)}`;
+            if (type_contrat) dbUrl += `&type_contrat=eq.${encodeURIComponent(type_contrat)}`;
+            if (remote !== undefined) dbUrl += `&remote=eq.${remote}`;
+
+            const res = await fetch(dbUrl, { headers: getSupabaseHeaders() });
+            if (res.ok) {
+              let list = await res.json();
+              if (query) {
+                const qL = query.toLowerCase();
+                list = list.filter(o => o.titre?.toLowerCase().includes(qL) || o.description?.toLowerCase().includes(qL));
+              }
+              result = { content: [{ type: "text", text: JSON.stringify(list, null, 2) }] };
+            } else {
+              result = { content: [{ type: "text", text: "Erreur" }], isError: true };
+            }
+          }
+
+          else if (name === "obtenir_offre") {
+            const { id } = args || {};
+            const res = await fetch(`${supabaseUrl}/rest/v1/job_offers?id=eq.${id}&select=*`, { headers: getSupabaseHeaders() });
+            if (res.ok) {
+              const list = await res.json();
+              if (list.length === 0) {
+                result = { content: [{ type: "text", text: "Offre introuvable." }], isError: true };
+              } else {
+                result = { content: [{ type: "text", text: JSON.stringify(list[0], null, 2) }] };
+              }
+            } else {
+              result = { content: [{ type: "text", text: "Erreur" }], isError: true };
+            }
+          }
+
+          else if (name === "postuler_offre") {
+            if (!authData) {
+              result = { content: [{ type: "text", text: "Authentification requise." }], isError: true };
+              break;
+            }
+            const { user, token } = authData;
+            const { job_offer_id, cv_id, bio_id, message } = args || {};
+
+            // Check if already applied
+            const checkRes = await fetch(`${supabaseUrl}/rest/v1/job_applications?job_offer_id=eq.${job_offer_id}&user_id=eq.${user.id}`, { headers: getSupabaseHeaders() });
+            const checkData = await checkRes.json();
+            if (checkData.length > 0) {
+              result = { content: [{ type: "text", text: "Vous avez déjà postulé à cette offre d'emploi." }], isError: true };
+              break;
+            }
+
+            const appPayload = {
+              job_offer_id,
+              user_id: user.id,
+              cv_id: cv_id || null,
+              bio_id: bio_id || null,
+              message: message || "",
+              statut: "envoyee",
+              created_at: new Date().toISOString()
+            };
+
+            const postRes = await fetch(`${supabaseUrl}/rest/v1/job_applications`, {
+              method: "POST",
+              headers: getSupabaseHeaders(token),
+              body: JSON.stringify(appPayload)
+            });
+
+            if (postRes.ok) {
+              result = { content: [{ type: "text", text: "Candidature envoyée avec succès !" }] };
+            } else {
+              result = { content: [{ type: "text", text: "Échec de l'envoi de la candidature." }], isError: true };
+            }
+          }
+
+          else if (name === "lister_candidatures") {
+            if (!authData) {
+              result = { content: [{ type: "text", text: "Authentification requise." }], isError: true };
+              break;
+            }
+            const { user, token } = authData;
+            const { job_offer_id } = args || {};
+
+            // Verify owner of the offer
+            const offerRes = await fetch(`${supabaseUrl}/rest/v1/job_offers?id=eq.${job_offer_id}&select=recruiter_id`, { headers: getSupabaseHeaders() });
+            const offerData = await offerRes.json();
+            if (offerData.length === 0 || offerData[0].recruiter_id !== user.id) {
+              result = { content: [{ type: "text", text: "Non autorisé (Vous n'êtes pas le recruteur de cette offre)." }], isError: true };
+              break;
+            }
+
+            const appsRes = await fetch(`${supabaseUrl}/rest/v1/job_applications?job_offer_id=eq.${job_offer_id}&select=*`, { headers: getSupabaseHeaders() });
+            if (appsRes.ok) {
+              const list = await appsRes.json();
+              result = { content: [{ type: "text", text: JSON.stringify(list, null, 2) }] };
+            } else {
+              result = { content: [{ type: "text", text: "Erreur" }], isError: true };
+            }
+          }
+
+          else if (name === "signaler_offre") {
+            if (!authData) {
+              result = { content: [{ type: "text", text: "Authentification requise." }], isError: true };
+              break;
+            }
+            const { user, token } = authData;
+            const { job_offer_id, raison } = args || {};
+
+            const reportPayload = {
+              job_offer_id,
+              reporter_user_id: user.id,
+              raison,
+              statut: "open",
+              created_at: new Date().toISOString()
+            };
+
+            const reportRes = await fetch(`${supabaseUrl}/rest/v1/job_offer_reports`, {
+              method: "POST",
+              headers: getSupabaseHeaders(token),
+              body: JSON.stringify(reportPayload)
+            });
+
+            if (reportRes.ok) {
+              result = { content: [{ type: "text", text: "Offre d'emploi signalée avec succès aux modérateurs." }] };
+            } else {
+              result = { content: [{ type: "text", text: "Échec du signalement." }], isError: true };
+            }
+          }
+
+          else if (name === "booster_post") {
+            if (!authData) {
+              result = { content: [{ type: "text", text: "Authentification requise." }], isError: true };
               break;
             }
             const { user } = authData;
-
-            const { ebook_id, numero_paiement, nom_client } = args || {};
-            if (!ebook_id || !numero_paiement || !nom_client) {
-              result = {
-                content: [{ type: "text", text: "Informations manquantes. Les champs 'ebook_id', 'numero_paiement' et 'nom_client' sont obligatoires." }],
-                isError: true
-              };
-              break;
-            }
+            const { target_type, target_id, numeroSend, nomclient, montant } = args || {};
 
             const urlObj = new URL(request.url);
             const appUrl = env.APP_URL || `${urlObj.protocol}//${urlObj.host}`;
 
-            try {
-              const createPaymentRes = await fetch(`${appUrl}/api/payments/create`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                  ebookId: ebook_id,
-                  userId: user.id,
-                  numeroSend: numero_paiement,
-                  nomclient: nom_client,
-                  userEmail: user.email || ""
-                })
-              });
+            const boostRes = await fetch(`${appUrl}/api/boost/create`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${authData.token}`
+              },
+              body: JSON.stringify({ target_type, target_id, numeroSend, nomclient, montant })
+            });
 
-              if (createPaymentRes.ok) {
-                const payData = await createPaymentRes.json();
-                if (payData.statut && payData.url) {
-                  result = {
-                    content: [{ 
-                      type: "text", 
-                      text: `Voici votre lien de paiement sécurisé. Cliquez dessus pour confirmer et finaliser votre achat : ${payData.url}` 
-                    }],
-                    isError: false
-                  };
-                } else {
-                  result = {
-                    content: [{ type: "text", text: `Échec de l'initialisation du paiement : ${payData.error || "Réponse invalide du service de paiement"}` }],
-                    isError: true
-                  };
-                }
-              } else {
-                const errText = await createPaymentRes.text();
-                result = {
-                  content: [{ type: "text", text: `Erreur de communication avec le serveur de paiement : ${errText}` }],
-                  isError: true
-                };
-              }
-            } catch (err) {
-              result = {
-                content: [{ type: "text", text: `Erreur interne lors de la création du paiement : ${err.message}` }],
-                isError: true
-              };
+            if (boostRes.ok) {
+              const r = await boostRes.json();
+              result = { content: [{ type: "text", text: `Lien de paiement MoneyFusion Boost créé avec succès ! Veuillez vous rendre sur ce lien pour régler le montant : ${r.url}` }] };
+            } else {
+              const text = await boostRes.text();
+              result = { content: [{ type: "text", text: `Erreur d'initialisation du paiement : ${text}` }], isError: true };
             }
-          } 
-          
+          }
+
+          else if (name === "telecharger_pdf") {
+            const { reference } = args || {};
+            const res = await fetch(`${supabaseUrl}/rest/v1/cvs?reference=eq.${reference}&select=pdf_url,is_public,user_id`, { headers: getSupabaseHeaders() });
+            if (res.ok) {
+              const list = await res.json();
+              if (list.length === 0) {
+                result = { content: [{ type: "text", text: "CV introuvable." }], isError: true };
+              } else {
+                const cv = list[0];
+                if (!cv.is_public && (!authData || authData.user.id !== cv.user_id)) {
+                  result = { content: [{ type: "text", text: "Accès refusé. Ce CV est privé." }], isError: true };
+                } else {
+                  result = { content: [{ type: "text", text: `Lien PDF : ${cv.pdf_url || "Aucun fichier PDF joint actuellement."}` }] };
+                }
+              }
+            } else {
+              result = { content: [{ type: "text", text: "Erreur" }], isError: true };
+            }
+          }
+
+          else if (name === "sauvegarder_favori") {
+            if (!authData) {
+              result = { content: [{ type: "text", text: "Authentification requise." }], isError: true };
+              break;
+            }
+            const { user, token } = authData;
+            const { item_type, item_id } = args || {};
+
+            const favPayload = {
+              user_id: user.id,
+              item_type,
+              item_id,
+              created_at: new Date().toISOString()
+            };
+
+            const favRes = await fetch(`${supabaseUrl}/rest/v1/saved_items`, {
+              method: "POST",
+              headers: getSupabaseHeaders(token),
+              body: JSON.stringify(favPayload)
+            });
+
+            if (favRes.ok) {
+              result = { content: [{ type: "text", text: "Élément ajouté à vos favoris !" }] };
+            } else {
+              result = { content: [{ type: "text", text: "Déjà dans vos favoris ou erreur." }], isError: true };
+            }
+          }
+
+          else if (name === "lister_favoris") {
+            if (!authData) {
+              result = { content: [{ type: "text", text: "Authentification requise." }], isError: true };
+              break;
+            }
+            const { user, token } = authData;
+            const favsRes = await fetch(`${supabaseUrl}/rest/v1/saved_items?user_id=eq.${user.id}`, { headers: getSupabaseHeaders(token) });
+            if (favsRes.ok) {
+              const list = await favsRes.json();
+              result = { content: [{ type: "text", text: JSON.stringify(list, null, 2) }] };
+            } else {
+              result = { content: [{ type: "text", text: "Erreur de base de données." }], isError: true };
+            }
+          }
+
           else {
             error = { code: -32601, message: `Method not found: ${name}` };
           }

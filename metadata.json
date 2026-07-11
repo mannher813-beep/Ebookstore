@@ -1,6 +1,6 @@
 {
-  "name": "Ebook Store",
-  "description": "A complete, production-ready ebook store featuring automated mobile money payments via MoneyFusion, user accounts, and secure ebook downloads.",
+  "name": "Plateforme de Recrutement Afrique",
+  "description": "Plateforme professionnelle de recrutement connectant recruteurs et candidats, avec recherche intelligente, assistant IA, boosts MoneyFusion et support MCP.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

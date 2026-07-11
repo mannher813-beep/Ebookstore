@@ -1,1454 +1,1045 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Plus, 
-  Trash2, 
-  Database, 
   ShieldCheck, 
-  DollarSign, 
-  ListOrdered, 
-  Code, 
-  ArrowUpRight, 
-  HelpCircle, 
-  FileText, 
-  UploadCloud, 
-  CheckCircle, 
   AlertCircle, 
+  Users, 
+  CheckCircle, 
+  XCircle, 
+  Plus, 
+  Database, 
+  Search, 
+  Building, 
+  Briefcase, 
+  FileText, 
+  Settings, 
+  Activity, 
+  RefreshCw, 
+  Clock, 
+  ArrowUpRight, 
+  Lock,
+  ChevronRight,
+  ShieldAlert,
   Loader2,
-  Users,
+  Trash2,
   Check,
-  X,
-  Coins,
-  MessageSquare,
   Send,
-  RefreshCw,
-  Phone,
-  ExternalLink,
-  Clock
+  X
 } from "lucide-react";
-import { Ebook, Achat } from "../types";
 import { API_BASE_URL } from "../supabaseClient";
 
 interface AdminPanelProps {
-  ebooks: Ebook[];
-  onAddEbook: (ebook: Omit<Ebook, "id">) => Promise<{ success: boolean; error?: string }>;
-  onDeleteEbook: (id: string) => Promise<boolean>;
-  configStatus: any;
+  currentUser: any;
+  userRole: string;
 }
 
-export default function AdminPanel({ ebooks, onAddEbook, onDeleteEbook, configStatus }: AdminPanelProps) {
-  // Tabs & Layout
-  const [activeTab, setActiveTab] = useState<"books" | "affiliates">("books");
-
-  // Core Ebook & Tx States
-  const [titre, setTitre] = useState("");
-  const [description, setDescription] = useState("");
-  const [prix, setPrix] = useState("");
-  const [isGratuit, setIsGratuit] = useState(false);
-  const [urlCouverture, setUrlCouverture] = useState("");
-  const [urlFichier, setUrlFichier] = useState("");
-  const [categorie, setCategorie] = useState("Programmation");
+export default function AdminPanel({ currentUser, userRole }: AdminPanelProps) {
+  const [activeTab, setActiveTab] = useState<"recruiters" | "offers" | "reports" | "roles" | "audit">("recruiters");
+  
+  // Lists
+  const [recruiters, setRecruiters] = useState<any[]>([]);
+  const [offers, setOffers] = useState<any[]>([]);
+  const [reports, setReports] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  
+  // Loading & statuses
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [diagStatus, setDiagStatus] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
 
-  const [uploadingCouverture, setUploadingCouverture] = useState(false);
-  const [progressCouverture, setProgressCouverture] = useState(0);
-  const [couvertureName, setCouvertureName] = useState("");
+  // Invitation
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("recruiter");
+  const [invitations, setInvitations] = useState<any[]>([]);
 
-  const [uploadingPdf, setUploadingPdf] = useState(false);
-  const [progressPdf, setProgressPdf] = useState(0);
-  const [pdfName, setPdfName] = useState("");
-
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [loadingTx, setLoadingTx] = useState(false);
-
-  // Affiliates Administration States
-  const [affiliates, setAffiliates] = useState<any[]>([]);
-  const [loadingAffiliates, setLoadingAffiliates] = useState(false);
-  const [selectedChatAffiliate, setSelectedChatAffiliate] = useState<any | null>(null);
-  const [chatMessages, setChatMessages] = useState<any[]>([]);
-  const [adminReplyText, setAdminReplyText] = useState("");
-  const [sendingReply, setSendingReply] = useState(false);
-  const [motifRefusText, setMotifRefusText] = useState<{ [key: string]: string }>({});
-  const [showRefusInput, setShowRefusInput] = useState<{ [key: string]: boolean }>({});
-
-  const [adminPayoutRequests, setAdminPayoutRequests] = useState<any[]>([]);
-  const [loadingAdminPayouts, setLoadingAdminPayouts] = useState(false);
-
-  const fetchPayoutRequestsAdmin = async () => {
-    try {
-      const { supabase } = await import("../supabaseClient");
-      if (!supabase) return;
-      setLoadingAdminPayouts(true);
-      const { data, error } = await supabase
-        .from("commission_payout_requests")
-        .select(`
-          id,
-          affiliate_id,
-          montant,
-          telephone_paiement,
-          statut,
-          requested_at,
-          processed_at
-        `)
-        .order("requested_at", { ascending: false });
-
-      if (error) throw error;
-
-      if (data) {
-        setAdminPayoutRequests(data);
-      }
-    } catch (e) {
-      console.error("Error loading payout requests in admin:", e);
-    } finally {
-      setLoadingAdminPayouts(false);
-    }
+  // Fetch functions
+  const getAuthHeader = () => {
+    const token = localStorage.getItem("sb-token") || "";
+    return {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json"
+    };
   };
 
-  const fetchAffiliatesData = async () => {
+  const fetchRecruiters = async () => {
     try {
-      const { supabase, hasSupabaseKeys } = await import("../supabaseClient");
-      if (!hasSupabaseKeys || !supabase) return;
-      setLoadingAffiliates(true);
-
-      // Fetch payout requests too
-      fetchPayoutRequestsAdmin();
-
-      const { data: affList, error: affErr } = await supabase
-        .from("affiliates")
-        .select("*")
-        .order("applied_at", { ascending: false });
-
-      if (affErr) throw affErr;
-
-      const { data: achatsData } = await supabase
-        .from("achats")
-        .select("id, affiliate_id, statut")
-        .eq("statut", "paid");
-
-      const { data: commissionsData } = await supabase
-        .from("affiliate_commissions")
-        .select("id, affiliate_id, montant");
-
-      const list = (affList || []).map((aff) => {
-        const salesCount = (achatsData || []).filter(ac => ac.affiliate_id === aff.id).length;
-        const commissionsSum = (commissionsData || [])
-          .filter(c => c.affiliate_id === aff.id)
-          .reduce((acc, curr) => acc + Number(curr.montant), 0);
-        const daughterCount = (affList || []).filter(a => a.parent_affiliate_id === aff.id).length;
-
-        return {
-          ...aff,
-          salesCount,
-          commissionsSum,
-          daughterCount
-        };
-      });
-
-      setAffiliates(list);
-    } catch (err) {
-      console.error("Error fetching admin affiliates:", err);
-    } finally {
-      setLoadingAffiliates(false);
-    }
-  };
-
-  const fetchChatMessages = async (affId: string) => {
-    try {
-      const { supabase } = await import("../supabaseClient");
-      if (!supabase) return;
-      const { data, error } = await supabase
-        .from("affiliate_messages")
-        .select("*")
-        .eq("affiliate_id", affId)
-        .order("created_at", { ascending: true });
-
-      if (!error && data) {
-        setChatMessages(data);
-      }
-    } catch (e) {
-      console.error("Error loading chat messages for admin:", e);
-    }
-  };
-
-  const handleSendAdminReply = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedChatAffiliate || !adminReplyText.trim() || sendingReply) return;
-
-    setSendingReply(true);
-    try {
-      const { supabase } = await import("../supabaseClient");
-      if (!supabase) return;
-
-      const { error } = await supabase.from("affiliate_messages").insert({
-        affiliate_id: selectedChatAffiliate.id,
-        sender: "admin",
-        message: adminReplyText.trim()
-      });
-
-      if (!error) {
-        setAdminReplyText("");
-        fetchChatMessages(selectedChatAffiliate.id);
-      }
-    } catch (err) {
-      console.error("Error sending admin reply:", err);
-    } finally {
-      setSendingReply(false);
-    }
-  };
-
-  const handleAcceptAffiliate = async (id: string) => {
-    try {
-      const { supabase } = await import("../supabaseClient");
-      if (!supabase) return;
-
-      // 1. Fetch affiliate to get user_id and nom_complet
-      const { data: aff, error: affErr } = await supabase
-        .from("affiliates")
-        .select("user_id, nom_complet")
-        .eq("id", id)
-        .single();
-
-      if (affErr) throw affErr;
-      if (!aff) throw new Error("Affilié introuvable");
-
-      // 2. Query achats where user_id is the user's ID, statut is paid and montant > 0
-      const { data: userPurchases, error: purchaseErr } = await supabase
-        .from("achats")
-        .select("id, montant, statut")
-        .eq("user_id", aff.user_id)
-        .eq("statut", "paid")
-        .gt("montant", 0);
-
-      if (purchaseErr) throw purchaseErr;
-
-      if (!userPurchases || userPurchases.length === 0) {
-        alert(
-          `Approbation impossible : L'utilisateur ${aff.nom_complet} n'a effectué aucun achat payé. Un achat avec montant supérieur à 0 FCFA est requis pour approuver un affilié (les ebooks gratuits ne comptent pas).`
-        );
-        return;
-      }
-
-      const { error } = await supabase
-        .from("affiliates")
-        .update({
-          status: "approved",
-          reviewed_at: new Date().toISOString()
-        })
-        .eq("id", id);
-
-      if (error) throw error;
-      await fetchAffiliatesData();
-    } catch (err: any) {
-      console.error("Error approving affiliate:", err);
-      alert(`Erreur lors de l'approbation : ${err.message}`);
-    }
-  };
-
-  const handleMarkPayoutAsPaid = async (requestId: string) => {
-    try {
-      const { supabase } = await import("../supabaseClient");
-      if (!supabase) return;
-
-      const confirmPay = window.confirm("Confirmez-vous le versement de ce paiement ? Les commissions associées passeront définitivement au statut 'payé'.");
-      if (!confirmPay) return;
-
-      // 1. Update status of the payout request to 'paid'
-      const { error: requestErr } = await supabase
-        .from("commission_payout_requests")
-        .update({
-          statut: "paid",
-          processed_at: new Date().toISOString()
-        })
-        .eq("id", requestId);
-
-      if (requestErr) throw requestErr;
-
-      // 2. Update all associated commissions to 'paid'
-      const { error: commissionErr } = await supabase
-        .from("affiliate_commissions")
-        .update({
-          statut: "paid"
-        })
-        .eq("payout_request_id", requestId);
-
-      if (commissionErr) throw commissionErr;
-
-      alert("Demande de paiement validée et marquée comme payée avec succès !");
-      await fetchPayoutRequestsAdmin();
-      await fetchAffiliatesData();
-    } catch (err: any) {
-      console.error("Error processing payout request payment:", err);
-      alert(`Erreur lors de la validation du paiement : ${err.message}`);
-    }
-  };
-
-  const handleRejectPayoutRequest = async (requestId: string) => {
-    try {
-      const { supabase } = await import("../supabaseClient");
-      if (!supabase) return;
-
-      const confirmReject = window.confirm("Voulez-vous rejeter cette demande de paiement ? Les commissions associées redeviennent réclamables (leur payout_request_id repassera à NULL).");
-      if (!confirmReject) return;
-
-      // 1. Update request status to 'rejected'
-      const { error: requestErr } = await supabase
-        .from("commission_payout_requests")
-        .update({
-          statut: "rejected",
-          processed_at: new Date().toISOString()
-        })
-        .eq("id", requestId);
-
-      if (requestErr) throw requestErr;
-
-      // 2. Reset payout_request_id in commissions so they become claimable again
-      const { error: commissionErr } = await supabase
-        .from("affiliate_commissions")
-        .update({
-          payout_request_id: null
-        })
-        .eq("payout_request_id", requestId);
-
-      if (commissionErr) throw commissionErr;
-
-      alert("Demande de paiement rejetée avec succès.");
-      await fetchPayoutRequestsAdmin();
-      await fetchAffiliatesData();
-    } catch (err: any) {
-      console.error("Error rejecting payout request:", err);
-      alert(`Erreur lors du rejet : ${err.message}`);
-    }
-  };
-
-  const handleRejectAffiliate = async (id: string) => {
-    const motif = motifRefusText[id] || "";
-    try {
-      const { supabase } = await import("../supabaseClient");
-      if (!supabase) return;
-
-      const { error } = await supabase
-        .from("affiliates")
-        .update({
-          status: "rejected",
-          motif_rejet: motif.trim() || null,
-          reviewed_at: new Date().toISOString()
-        })
-        .eq("id", id);
-
-      if (error) throw error;
-      await fetchAffiliatesData();
-    } catch (err) {
-      console.error("Error rejecting affiliate:", err);
-    }
-  };
-
-  useEffect(() => {
-    if (activeTab === "affiliates") {
-      fetchAffiliatesData();
-    }
-  }, [activeTab]);
-
-  // Fetch transaction history
-  const fetchTransactions = async () => {
-    setLoadingTx(true);
-    try {
-      const { supabase, hasSupabaseKeys } = await import("../supabaseClient");
-      if (hasSupabaseKeys && supabase) {
-        const { data, error } = await supabase
-          .from("achats")
-          .select("*, ebook:ebooks(titre)")
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-        setTransactions(data || []);
-        return;
-      }
-
-      // Fallback
-      const session = supabase ? (await supabase.auth.getSession()).data.session : null;
-      const token = session ? `Bearer ${session.access_token}` : "";
-
-      const res = await fetch(`${API_BASE_URL}/api/transactions`, {
-        headers: {
-          "Authorization": token
-        }
-      });
+      const res = await fetch(`${API_BASE_URL}/api/moderator/recruiters`, { headers: getAuthHeader() });
       if (res.ok) {
         const data = await res.json();
-        setTransactions(data);
+        setRecruiters(data || []);
       }
-    } catch (err) {
-      console.error("Failed to fetch transactions:", err);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchOffers = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/moderator/offers`, { headers: getAuthHeader() });
+      if (res.ok) {
+        const data = await res.json();
+        setOffers(data || []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchReports = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/moderator/reports`, { headers: getAuthHeader() });
+      if (res.ok) {
+        const data = await res.json();
+        setReports(data || []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/roles`, { headers: getAuthHeader() });
+      if (res.ok) {
+        const data = await res.json();
+        setUsers(data || []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchAuditLogs = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/actions-log`, { headers: getAuthHeader() });
+      if (res.ok) {
+        const data = await res.json();
+        setAuditLogs(data || []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchInvitations = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/invitations`, { headers: getAuthHeader() });
+      if (res.ok) {
+        const data = await res.json();
+        setInvitations(data || []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchDiagnostics = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/config-status`);
+      if (res.ok) {
+        const data = await res.json();
+        setDiagStatus(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const loadAllData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await Promise.all([
+        fetchRecruiters(),
+        fetchOffers(),
+        fetchReports(),
+        fetchDiagnostics()
+      ]);
+      if (userRole === "admin") {
+        await Promise.all([
+          fetchUsers(),
+          fetchAuditLogs(),
+          fetchInvitations()
+        ]);
+      }
+    } catch (e: any) {
+      setError("Erreur de chargement des données de modération.");
     } finally {
-      setLoadingTx(false);
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchTransactions();
-  }, [ebooks]);
+    loadAllData();
+  }, [userRole]);
 
-  const handleCouvertureChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setError(null);
-    setUploadingCouverture(true);
-    setProgressCouverture(0);
-    setCouvertureName(file.name);
-
-    // Validate type
-    if (!file.type.startsWith("image/")) {
-      setError("Le fichier de couverture doit être une image (PNG, JPG, WEBP, etc.).");
-      setUploadingCouverture(false);
-      return;
-    }
-
-    // Validate size (10 MB)
-    if (file.size > 10 * 1024 * 1024) {
-      setError("L'image de couverture est trop lourde (max 10 Mo).");
-      setUploadingCouverture(false);
-      return;
-    }
-
-    // Simulated progress bar
-    const interval = setInterval(() => {
-      setProgressCouverture((prev) => {
-        if (prev >= 90) return prev;
-        return prev + 10;
-      });
-    }, 100);
-
+  // Moderate Recruiter Profile
+  const handleVerifyRecruiter = async (recruiterId: string, status: "verified" | "rejected") => {
+    setActionLoading(`recruiter-${recruiterId}`);
     try {
-      const { supabase } = await import("../supabaseClient");
-      if (!supabase) {
-        throw new Error("Client Supabase non initialisé.");
+      const res = await fetch(`${API_BASE_URL}/api/moderator/recruiters/${recruiterId}/verify`, {
+        method: "POST",
+        headers: getAuthHeader(),
+        body: JSON.stringify({ verification_status: status, verification_note: `Profil entreprise traité le ${new Date().toLocaleDateString()}` })
+      });
+
+      if (res.ok) {
+        setMsg(`Le recruteur a été marqué comme ${status === "verified" ? "Vérifié" : "Rejeté"} avec succès.`);
+        fetchRecruiters();
+        if (userRole === "admin") fetchAuditLogs();
+      } else {
+        const err = await res.json();
+        setError(err.error || "Une erreur est survenue.");
       }
-
-      const fileExt = file.name.split(".").pop() || "png";
-      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 10)}.${fileExt}`;
-
-      const { data, error: uploadErr } = await supabase.storage
-        .from("couvertures")
-        .upload(fileName, file, { cacheControl: "3600", upsert: false });
-
-      if (uploadErr) {
-        throw uploadErr;
-      }
-
-      // Get public URL
-      const { data: publicUrlData } = supabase.storage
-        .from("couvertures")
-        .getPublicUrl(fileName);
-
-      setUrlCouverture(publicUrlData.publicUrl);
-      setProgressCouverture(100);
-    } catch (err: any) {
-      console.error("Cover upload error:", err);
-      setError("Erreur lors du téléversement de la couverture : " + (err.message || err));
-      setCouvertureName("");
-      setUrlCouverture("");
+    } catch (e: any) {
+      setError(e.message);
     } finally {
-      clearInterval(interval);
-      setUploadingCouverture(false);
+      setActionLoading(null);
     }
   };
 
-  const handlePdfChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setError(null);
-    setUploadingPdf(true);
-    setProgressPdf(0);
-    setPdfName(file.name);
-
-    // Validate type
-    if (file.type !== "application/pdf" && !file.name.endsWith(".pdf")) {
-      setError("Le fichier doit obligatoirement être un document PDF.");
-      setUploadingPdf(false);
-      return;
-    }
-
-    // Validate size (100 MB)
-    if (file.size > 100 * 1024 * 1024) {
-      setError("Le fichier PDF est trop lourd (max 100 Mo).");
-      setUploadingPdf(false);
-      return;
-    }
-
-    // Simulated progress bar
-    const interval = setInterval(() => {
-      setProgressPdf((prev) => {
-        if (prev >= 95) return prev;
-        return prev + 5;
-      });
-    }, 150);
-
+  // Moderate Job Offer
+  const handleVerifyOffer = async (offerId: string, status: "approved" | "rejected") => {
+    setActionLoading(`offer-${offerId}`);
     try {
-      const { supabase } = await import("../supabaseClient");
-      if (!supabase) {
-        throw new Error("Client Supabase non initialisé.");
+      const res = await fetch(`${API_BASE_URL}/api/moderator/offers/${offerId}/verify`, {
+        method: "POST",
+        headers: getAuthHeader(),
+        body: JSON.stringify({ moderation_status: status, moderation_note: `Offre modérée le ${new Date().toLocaleDateString()}` })
+      });
+
+      if (res.ok) {
+        setMsg(`L'offre d'emploi a été ${status === "approved" ? "Approuvée" : "Refusée"} avec succès.`);
+        fetchOffers();
+        if (userRole === "admin") fetchAuditLogs();
+      } else {
+        const err = await res.json();
+        setError(err.error || "Une erreur est survenue.");
       }
-
-      const fileExt = file.name.split(".").pop() || "pdf";
-      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 10)}.${fileExt}`;
-
-      const { data, error: uploadErr } = await supabase.storage
-        .from("ebooks-fichiers")
-        .upload(fileName, file, { cacheControl: "3600", upsert: false });
-
-      if (uploadErr) {
-        throw uploadErr;
-      }
-
-      setUrlFichier(fileName);
-      setProgressPdf(100);
-    } catch (err: any) {
-      console.error("PDF upload error:", err);
-      setError("Erreur lors du téléversement du PDF : " + (err.message || err));
-      setPdfName("");
-      setUrlFichier("");
+    } catch (e: any) {
+      setError(e.message);
     } finally {
-      clearInterval(interval);
-      setUploadingPdf(false);
+      setActionLoading(null);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Resolve Alert / Report
+  const handleResolveReport = async (reportId: string, status: "resolved" | "dismissed") => {
+    setActionLoading(`report-${reportId}`);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/moderator/reports/${reportId}/resolve`, {
+        method: "POST",
+        headers: getAuthHeader(),
+        body: JSON.stringify({ statut: status })
+      });
+
+      if (res.ok) {
+        setMsg(`Signalement traité (${status === "resolved" ? "Résolu" : "Classé sans suite"}).`);
+        fetchReports();
+        fetchOffers();
+        if (userRole === "admin") fetchAuditLogs();
+      } else {
+        const err = await res.json();
+        setError(err.error || "Une erreur est survenue.");
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Super-admin Change Role
+  const handleChangeRole = async (targetUserId: string, newRole: string) => {
+    setActionLoading(`role-${targetUserId}`);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/roles/${targetUserId}`, {
+        method: "POST",
+        headers: getAuthHeader(),
+        body: JSON.stringify({ role: newRole })
+      });
+
+      if (res.ok) {
+        setMsg("Rôle de l'utilisateur mis à jour.");
+        fetchUsers();
+        fetchAuditLogs();
+      } else {
+        const err = await res.json();
+        setError(err.error || "Une erreur est survenue.");
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Super-admin Create Invitation
+  const handleCreateInvite = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setSuccess(false);
+    if (!inviteEmail) return;
+
     setLoading(true);
-
-    if (!titre || !description || !urlCouverture || !urlFichier || !categorie) {
-      setError("Veuillez remplir tous les champs requis et téléverser les fichiers.");
-      setLoading(false);
-      return;
-    }
-
-    let parsedPrix = 0;
-    if (!isGratuit) {
-      if (prix === "") {
-        setError("Veuillez renseigner un prix pour un ebook payant.");
-        setLoading(false);
-        return;
-      }
-      // Clean and validate the price (numeric)
-      const cleanedPrix = prix.toString().replace(/,/g, ".").replace(/\s/g, "");
-      parsedPrix = Number(cleanedPrix);
-      if (isNaN(parsedPrix) || parsedPrix <= 0) {
-        setError("Le prix d'un ebook payant doit être un nombre valide strictement supérieur à 0 (ex : 5000 ou 49.99).");
-        setLoading(false);
-        return;
-      }
-    } else {
-      parsedPrix = 0;
-    }
-
     try {
-      const result = await onAddEbook({
-        titre: titre.trim(),
-        description: description.trim(),
-        prix: parsedPrix,
-        url_couverture: urlCouverture.trim(),
-        url_fichier_storage: urlFichier.trim(),
-        categorie: categorie.trim(),
+      const res = await fetch(`${API_BASE_URL}/api/admin/invite`, {
+        method: "POST",
+        headers: getAuthHeader(),
+        body: JSON.stringify({ email: inviteEmail, role_invited: inviteRole })
       });
 
-      if (result.success) {
-        setSuccess(true);
-        setTitre("");
-        setDescription("");
-        setPrix("");
-        setIsGratuit(false);
-        setUrlCouverture("");
-        setUrlFichier("");
-        setCouvertureName("");
-        setPdfName("");
-        setTimeout(() => setSuccess(false), 3000);
+      if (res.ok) {
+        setMsg(`Invitation créée et envoyée avec succès à ${inviteEmail}.`);
+        setInviteEmail("");
+        fetchInvitations();
+        fetchAuditLogs();
       } else {
-        setError(result.error || "Échec de la création de l'ebook.");
+        const err = await res.json();
+        setError(err.error || "Échec d'envoi de l'invitation.");
       }
-    } catch (err: any) {
-      console.error("Exception in handleSubmit:", err);
-      setError("Une exception est survenue lors de l'enregistrement : " + (err.message || err));
+    } catch (e: any) {
+      setError(e.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm("Êtes-vous sûr de vouloir supprimer cet ebook ?")) {
-      const deleted = await onDeleteEbook(id);
-      if (deleted) {
-        // Updated state inside parent automatically
-      } else {
-        alert("Impossible de supprimer cet ebook.");
+  // Revoke Invitation
+  const handleRevokeInvitation = async (invitationId: string) => {
+    setActionLoading(`invite-${invitationId}`);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/invitations/${invitationId}/revoke`, {
+        method: "POST",
+        headers: getAuthHeader()
+      });
+
+      if (res.ok) {
+        setMsg("Invitation révoquée.");
+        fetchInvitations();
+        fetchAuditLogs();
       }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setActionLoading(null);
     }
   };
+
+  // Stats Counters
+  const pendingRecruiters = recruiters.filter(r => r.verification_status === "pending").length;
+  const pendingOffers = offers.filter(o => o.moderation_status === "pending").length;
+  const openReports = reports.filter(r => r.statut === "open").length;
 
   return (
-    <div className="space-y-10 font-sans" id="admin-panel">
-      {/* Intro Section */}
-      <div className="bg-slate-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
-        <div className="relative z-10 max-w-xl space-y-3">
-          <span className="bg-indigo-600 text-white text-[9px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-full font-mono">
-            Espace d'Administration
-          </span>
-          <h2 className="font-display font-black text-2xl sm:text-3xl tracking-tight leading-none">
-            Back-Office de Gestion
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-350 leading-relaxed">
-            Ajoutez de nouvelles oeuvres, gérez les articles en vente, examinez les transactions mobile money de vos clients et inspectez les connexions aux services cloud.
-          </p>
-        </div>
-        {/* Abstract background vector */}
-        <div className="absolute right-0 bottom-0 top-0 w-1/3 opacity-10 pointer-events-none hidden md:block">
-          <Database className="w-full h-full text-white" />
-        </div>
-      </div>
-
-      {/* Tabs Selector Bar */}
-      <div className="flex border-b border-slate-200 gap-1 overflow-x-auto shrink-0 pb-px">
-        <button
-          onClick={() => setActiveTab("books")}
-          className={`flex items-center gap-2 px-6 py-3.5 font-bold text-xs sm:text-sm border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-            activeTab === "books"
-              ? "border-indigo-600 text-indigo-600 bg-indigo-50/10"
-              : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50"
-          }`}
-        >
-          <ListOrdered className="h-4 w-4 shrink-0" />
-          <span>Catalogue & Ventes</span>
-        </button>
-        <button
-          onClick={() => setActiveTab("affiliates")}
-          className={`flex items-center gap-2 px-6 py-3.5 font-bold text-xs sm:text-sm border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-            activeTab === "affiliates"
-              ? "border-indigo-600 text-indigo-600 bg-indigo-50/10"
-              : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50"
-          }`}
-        >
-          <Users className="h-4 w-4 shrink-0" />
-          <span>Candidatures & Affiliations</span>
-        </button>
-      </div>
-
-      {activeTab === "books" ? (
-        <>
-          {/* Grid: Forms & Status */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Form Container */}
-        <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-            <h3 className="font-display font-bold text-lg text-slate-900 flex items-center gap-2">
-              <Plus className="h-5 w-5 text-indigo-600" /> Ajouter un Ebook
-            </h3>
-          </div>
-
-          {error && (
-            <div className="bg-rose-50 text-rose-700 text-xs p-3 rounded-xl border border-rose-100 font-mono">
-              {error}
-            </div>
-          )}
-
-          {success && (
-            <div className="bg-emerald-50 text-emerald-700 text-xs p-3 rounded-xl border border-emerald-100 font-semibold">
-              Ebook enregistré avec succès ! Il est instantanément visible sur le catalogue.
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wider font-mono mb-1.5">Titre de l'ebook *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex : Devenir Pro en React"
-                  value={titre}
-                  onChange={(e) => setTitre(e.target.value)}
-                  className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-sans"
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-[10px] font-bold text-slate-455 uppercase tracking-wider font-mono">
-                    Prix (en FCFA) {isGratuit ? "" : "*"}
-                  </label>
-                  <label className="inline-flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-slate-500 hover:text-indigo-600 transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={isGratuit}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setIsGratuit(checked);
-                        if (checked) {
-                          setPrix("0");
-                        } else {
-                          setPrix("");
-                        }
-                      }}
-                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/20 h-3.5 w-3.5 cursor-pointer"
-                    />
-                    <span>Ebook gratuit</span>
-                  </label>
-                </div>
-                <input
-                  type="number"
-                  required={!isGratuit}
-                  disabled={isGratuit}
-                  min="0"
-                  placeholder={isGratuit ? "0 (Gratuit)" : "Ex : 4500"}
-                  value={isGratuit ? "0" : prix}
-                  onChange={(e) => setPrix(e.target.value)}
-                  className={`w-full px-3.5 py-2 text-sm border rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-sans ${
-                    isGratuit
-                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                      : "bg-slate-50 border-slate-200 text-slate-900"
-                  }`}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wider font-mono mb-1.5">Description de l'ouvrage *</label>
-              <textarea
-                required
-                rows={3}
-                placeholder="Ex : Apprenez pas-à-pas les concepts indispensables..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-sans"
-              ></textarea>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wider font-mono mb-1.5">Catégorie *</label>
-                <select
-                  value={categorie}
-                  onChange={(e) => setCategorie(e.target.value)}
-                  className="w-full px-3.5 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-sans"
-                >
-                  <option value="Programmation">Programmation</option>
-                  <option value="Design">Design</option>
-                  <option value="Business">Business</option>
-                  <option value="Développement Personnel">Développement Personnel</option>
-                  <option value="Autre">Autre</option>
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wider font-mono mb-1">
-                  Image de Couverture *
-                </label>
-                <div className="relative border-2 border-dashed border-slate-200 rounded-2xl p-3 hover:bg-slate-50 hover:border-indigo-400 transition-all cursor-pointer flex flex-col items-center justify-center text-center group min-h-[96px]">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleCouvertureChange}
-                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-                    disabled={uploadingCouverture}
-                  />
-                  {urlCouverture ? (
-                    <div className="flex items-center gap-3 w-full text-left">
-                      <img
-                        src={urlCouverture}
-                        alt="Aperçu"
-                        className="h-14 w-10 object-cover rounded shadow-sm shrink-0"
-                        referrerPolicy="no-referrer"
-                      />
-                      <div className="overflow-hidden flex-1 space-y-0.5">
-                        <p className="text-[11px] font-bold text-slate-800 truncate">{couvertureName || "couverture.png"}</p>
-                        <span className="inline-flex items-center gap-1 text-[9px] font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full uppercase tracking-wider">
-                          <CheckCircle className="h-2.5 w-2.5" /> Téléversé
-                        </span>
-                      </div>
-                    </div>
-                  ) : uploadingCouverture ? (
-                    <div className="w-full space-y-1.5">
-                      <div className="flex items-center justify-between text-[10px] text-slate-600 font-medium">
-                        <span className="flex items-center gap-1 font-mono">
-                          <Loader2 className="h-3 w-3 animate-spin text-indigo-600" /> Image...
-                        </span>
-                        <span>{progressCouverture}%</span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden">
-                        <div
-                          className="bg-indigo-600 h-full rounded-full transition-all duration-300"
-                          style={{ width: `${progressCouverture}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      <UploadCloud className="h-5 w-5 text-slate-400 group-hover:text-indigo-500 mx-auto transition-colors" />
-                      <p className="text-[11px] font-bold text-slate-700">Choisir une image</p>
-                      <p className="text-[9px] text-slate-400">PNG, JPG, WEBP (Max 10Mo)</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-wider font-mono mb-1">
-                Document PDF de l'Ouvrage *
-              </label>
-              <div className="relative border-2 border-dashed border-slate-200 rounded-2xl p-4 hover:bg-slate-50 hover:border-indigo-400 transition-all cursor-pointer flex flex-col items-center justify-center text-center group min-h-[96px]">
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  onChange={handlePdfChange}
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-                  disabled={uploadingPdf}
-                />
-                {urlFichier ? (
-                  <div className="flex items-center gap-3 w-full text-left">
-                    <div className="h-11 w-11 bg-rose-50 border border-rose-100 text-rose-600 rounded-xl flex items-center justify-center shrink-0">
-                      <FileText className="h-5.5 w-5.5" />
-                    </div>
-                    <div className="overflow-hidden flex-1 space-y-0.5">
-                      <p className="text-[11px] font-bold text-slate-800 truncate">{pdfName || "ebook.pdf"}</p>
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex items-center gap-1 text-[9px] font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full uppercase tracking-wider">
-                          <CheckCircle className="h-2.5 w-2.5" /> Téléversé
-                        </span>
-                        <span className="text-[9px] text-slate-400 font-mono truncate max-w-[140px]">
-                          Chemin: {urlFichier}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ) : uploadingPdf ? (
-                  <div className="w-full space-y-1.5">
-                    <div className="flex items-center justify-between text-[10px] text-slate-600 font-medium">
-                      <span className="flex items-center gap-1 font-mono">
-                        <Loader2 className="h-3 w-3 animate-spin text-indigo-600" /> PDF...
-                      </span>
-                      <span>{progressPdf}%</span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-1 rounded-full overflow-hidden">
-                      <div
-                        className="bg-indigo-600 h-full rounded-full transition-all duration-300"
-                        style={{ width: `${progressPdf}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    <UploadCloud className="h-5 w-5 text-slate-400 group-hover:text-indigo-500 mx-auto transition-colors" />
-                    <p className="text-[11px] font-bold text-slate-700">Choisir le fichier PDF</p>
-                    <p className="text-[9px] text-slate-400">PDF uniquement (Max 100Mo)</p>
-                  </div>
-                )}
-              </div>
-              <span className="text-[9px] text-slate-400 block leading-normal">
-                Ce fichier sera stocké de manière privée et cryptée sur le bucket <strong>"ebooks-fichiers"</strong>.
+    <div id="admin_panel_wrapper" className="max-w-7xl mx-auto px-4 py-8">
+      {/* Page Title & Back-office Header */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8 gap-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="px-2 py-0.5 text-xs font-semibold uppercase bg-amber-500/15 text-amber-500 rounded border border-amber-500/20">
+              Espace Modération
+            </span>
+            {userRole === "admin" && (
+              <span className="px-2 py-0.5 text-xs font-semibold uppercase bg-red-500/15 text-red-500 rounded border border-red-500/20">
+                Super Administrateur
               </span>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading || uploadingCouverture || uploadingPdf || !urlCouverture || !urlFichier}
-              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-100 text-white disabled:text-slate-400 font-bold text-xs sm:text-sm rounded-xl transition-all cursor-pointer shadow hover:shadow-md flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Enregistrement...
-                </>
-              ) : uploadingCouverture || uploadingPdf ? (
-                "Téléversement en cours..."
-              ) : !urlCouverture || !urlFichier ? (
-                "Téléversez la couverture et le PDF"
-              ) : (
-                "Enregistrer l'Ebook"
-              )}
-            </button>
-          </form>
-        </div>
-
-        {/* Configuration Overview Column */}
-        <div className="lg:col-span-5 space-y-6">
-          {/* Integration Status Card */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-            <h3 className="font-display font-bold text-base text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Database className="h-4.5 w-4.5 text-slate-600" /> Statut d'Intégration Cloud
-            </h3>
-
-            <div className="space-y-3.5 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500 font-medium">Boutique Production</span>
-                <span className="px-2 py-0.5 rounded-full font-bold font-mono text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-100">
-                  PRODUCTION
-                </span>
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500 font-medium font-sans">Endpoint Supabase</span>
-                  <span className="text-slate-400 font-mono text-[10px]">SUPABASE_URL</span>
-                </div>
-                <span className={`block p-2 rounded-lg text-[10px] font-mono border truncate max-w-full ${
-                  configStatus.supabaseUrl.includes("Erreur")
-                    ? "bg-rose-50 border-rose-150 text-rose-850"
-                    : configStatus.supabaseUrl.includes("Chargement")
-                    ? "bg-slate-50 border-slate-100 text-slate-500"
-                    : "bg-emerald-50 border-emerald-100 text-emerald-800 font-medium"
-                }`}>
-                  {configStatus.supabaseUrl}
-                </span>
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500 font-medium font-sans">Service Role Access</span>
-                  <span className="text-slate-400 font-mono text-[10px]">SUPABASE_SERVICE_KEY</span>
-                </div>
-                <span className={`block p-2 rounded-lg text-[10px] font-mono border text-center ${
-                  configStatus.supabaseServiceKey.includes("Erreur")
-                    ? "bg-rose-50 border-rose-150 text-rose-850 font-bold"
-                    : configStatus.supabaseServiceKey.includes("Chargement")
-                    ? "bg-slate-50 border-slate-100 text-slate-500"
-                    : "bg-emerald-50 border-emerald-100 text-emerald-800 font-bold"
-                }`}>
-                  {configStatus.supabaseServiceKey}
-                </span>
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500 font-medium font-sans">MoneyFusion Payment API</span>
-                  <span className="text-slate-400 font-mono text-[10px]">MONEYFUSION_URL</span>
-                </div>
-                <span className={`block p-2 rounded-lg text-[10px] font-mono border truncate max-w-full ${
-                  configStatus.moneyfusionUrl.includes("Erreur")
-                    ? "bg-rose-50 border-rose-150 text-rose-850"
-                    : configStatus.moneyfusionUrl.includes("Chargement")
-                    ? "bg-slate-50 border-slate-100 text-slate-500"
-                    : "bg-emerald-50 border-emerald-100 text-emerald-800 font-medium"
-                }`}>
-                  {configStatus.moneyfusionUrl}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Catalog Manager Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-4">
-        <h3 className="font-display font-bold text-lg text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-4">
-          <ListOrdered className="h-5 w-5 text-slate-600" /> Livres du Catalogue ({ebooks.length})
-        </h3>
-
-        {ebooks.length === 0 ? (
-          <p className="text-xs text-slate-500 text-center py-6">Aucun ebook enregistré dans la base de données.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-slate-100 text-slate-400 font-mono font-bold uppercase tracking-wider">
-                  <th className="py-3 px-4">Couverture</th>
-                  <th className="py-3 px-4">Titre / Catégorie</th>
-                  <th className="py-3 px-4">Fichier Storage</th>
-                  <th className="py-3 px-4 text-right">Prix</th>
-                  <th className="py-3 px-4 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {ebooks.map((eb) => (
-                  <tr key={eb.id} className="hover:bg-slate-50/75 transition-colors">
-                    <td className="py-3 px-4">
-                      <img
-                        src={eb.url_couverture}
-                        alt={eb.titre}
-                        className="w-10 h-14 object-cover rounded shadow-sm border border-slate-200"
-                      />
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="font-bold text-slate-900 block">{eb.titre}</span>
-                      <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-mono mt-1 inline-block uppercase">
-                        {eb.categorie}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="font-mono text-[10.5px] text-slate-500 flex items-center gap-1">
-                        <FileText className="h-3 w-3 text-slate-400" /> {eb.url_fichier_storage}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right font-bold text-slate-900">
-                      {eb.prix.toLocaleString()} FCFA
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <button
-                        onClick={() => handleDelete(eb.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
-                        title="Supprimer du catalogue"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Transaction History Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-          <h3 className="font-display font-bold text-lg text-slate-900 flex items-center gap-2">
-            <DollarSign className="h-5 w-5 text-emerald-500" /> Historique des Transactions Mobile Money
-          </h3>
-          <button
-            onClick={fetchTransactions}
-            className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer"
-          >
-            Rafraîchir les Logs
-          </button>
-        </div>
-
-        {loadingTx ? (
-          <p className="text-xs text-slate-500 text-center py-6">Chargement des transactions...</p>
-        ) : transactions.length === 0 ? (
-          <p className="text-xs text-slate-500 text-center py-6">Aucune transaction enregistrée dans l'historique.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-slate-100 text-slate-400 font-mono font-bold uppercase tracking-wider">
-                  <th className="py-3 px-4">Token Transaction</th>
-                  <th className="py-3 px-4">ID Client</th>
-                  <th className="py-3 px-4">Livre Commandé</th>
-                  <th className="py-3 px-4 text-right">Montant</th>
-                  <th className="py-3 px-4 text-center">Statut</th>
-                  <th className="py-3 px-4 text-right">Date</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {transactions.map((tx) => (
-                  <tr key={tx.id} className="hover:bg-slate-50/75 transition-colors">
-                    <td className="py-3 px-4">
-                      <span className="font-mono text-slate-700 block select-all">{tx.token_pay}</span>
-                    </td>
-                    <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">
-                      {tx.user_id}
-                    </td>
-                    <td className="py-3 px-4 font-medium text-slate-900">
-                      {tx.ebook?.titre || "N/A (ebook supprimé)"}
-                    </td>
-                    <td className="py-3 px-4 text-right font-bold text-slate-900">
-                      {tx.montant ? tx.montant.toLocaleString() : "0"} FCFA
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <span className={`inline-block px-2.5 py-0.5 rounded-full font-bold font-mono text-[9px] uppercase border ${
-                        tx.statut === "paid"
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          : tx.statut === "pending"
-                          ? "bg-indigo-50 text-indigo-700 border-indigo-200 animate-pulse"
-                          : "bg-rose-50 text-rose-700 border-rose-200"
-                      }`}>
-                        {tx.statut}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right text-slate-400 font-mono">
-                      {tx.created_at ? new Date(tx.created_at).toLocaleString() : "N/A"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-        </>
-      ) : (
-        /* AFFILIATES TAB CONTENT */
-        <div className="space-y-10">
-          
-          {/* Section 1: Pending Applications */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <h3 className="font-display font-bold text-base text-slate-900 flex items-center gap-2">
-                <Clock className="h-5 w-5 text-amber-500" /> Candidatures Affiliés en Attente ({
-                  affiliates.filter(a => a.status === "pending").length
-                })
-              </h3>
-              <button
-                onClick={fetchAffiliatesData}
-                disabled={loadingAffiliates}
-                className="p-1 text-xs text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer flex items-center gap-1"
-              >
-                <RefreshCw className={`h-3 w-3 ${loadingAffiliates ? 'animate-spin' : ''}`} />
-                <span>Actualiser</span>
-              </button>
-            </div>
-
-            {loadingAffiliates ? (
-              <p className="text-xs text-slate-500 text-center py-6">Chargement des données d'affiliation...</p>
-            ) : affiliates.filter(a => a.status === "pending").length === 0 ? (
-              <p className="text-xs text-slate-500 text-center py-6 bg-slate-50 border border-slate-100 rounded-xl">Aucune candidature en attente d'approbation.</p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {affiliates.filter(a => a.status === "pending").map((cand) => (
-                  <div key={cand.id} className="p-4 border border-slate-200 bg-slate-50/50 rounded-2xl space-y-4">
-                    <div className="flex justify-between items-start gap-2">
-                      <div>
-                        <h4 className="font-bold text-sm text-slate-900">{cand.nom_complet}</h4>
-                        <span className="text-[10px] text-slate-400 font-mono">Date : {new Date(cand.applied_at || "").toLocaleDateString()}</span>
-                      </div>
-                      <a
-                        href={`tel:${cand.telephone}`}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-[10px] font-bold rounded-lg font-mono transition-colors"
-                      >
-                        <Phone className="h-3 w-3 text-slate-500" />
-                        <span>{cand.telephone}</span>
-                      </a>
-                    </div>
-
-                    <div className="space-y-1.5 text-xs text-slate-600 leading-normal">
-                      <span className="block font-semibold uppercase font-mono text-[9px] text-slate-400">Moyen de promotion :</span>
-                      <p className="p-2.5 bg-white border border-slate-200 rounded-xl italic font-serif">
-                        "{cand.moyen_promotion}"
-                      </p>
-                    </div>
-
-                    {cand.lien_audience && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-[9px] font-mono font-semibold uppercase text-slate-400 shrink-0">Lien audience :</span>
-                        <a
-                          href={cand.lien_audience}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:underline font-mono truncate"
-                        >
-                          <span>{cand.lien_audience}</span>
-                          <ExternalLink className="h-2.5 w-2.5" />
-                        </a>
-                      </div>
-                    )}
-
-                    <div className="pt-2 border-t border-slate-100 flex flex-col gap-2">
-                      {showRefusInput[cand.id] ? (
-                        <div className="space-y-2">
-                          <input
-                            type="text"
-                            placeholder="Motif de refus (optionnel, ex : Audience insuffisante)"
-                            value={motifRefusText[cand.id] || ""}
-                            onChange={(e) => setMotifRefusText({
-                              ...motifRefusText,
-                              [cand.id]: e.target.value
-                            })}
-                            className="w-full px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-red-500 text-slate-850"
-                          />
-                          <div className="flex gap-2 justify-end">
-                            <button
-                              onClick={() => {
-                                setShowRefusInput({ ...showRefusInput, [cand.id]: false });
-                              }}
-                              className="px-3 py-1 bg-slate-150 text-slate-700 font-semibold text-[10px] rounded-lg cursor-pointer"
-                            >
-                              Annuler
-                            </button>
-                            <button
-                              onClick={() => handleRejectAffiliate(cand.id)}
-                              className="px-3 py-1 bg-rose-600 text-white font-bold text-[10px] rounded-lg cursor-pointer flex items-center gap-1"
-                            >
-                              <X className="h-3 w-3" />
-                              <span>Valider le refus</span>
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex gap-2 justify-end">
-                          <button
-                            onClick={() => {
-                              setShowRefusInput({ ...showRefusInput, [cand.id]: true });
-                            }}
-                            className="px-4 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 rounded-xl text-[11px] font-bold cursor-pointer flex items-center gap-1 transition-colors"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                            <span>Refuser</span>
-                          </button>
-                          <button
-                            onClick={() => handleAcceptAffiliate(cand.id)}
-                            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-bold cursor-pointer flex items-center gap-1 transition-colors shadow-sm"
-                          >
-                            <Check className="h-3.5 w-3.5" />
-                            <span>Accepter l'affilié</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
             )}
           </div>
+          <h1 className="text-3xl font-bold text-slate-950 dark:text-white tracking-tight">
+            Panneau de Contrôle & Modération
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            Gérez les habilitations, validez les fiches entreprises, modérez les offres d'emploi et traitez les alertes communautaires.
+          </p>
+        </div>
+        
+        <button 
+          onClick={loadAllData}
+          className="inline-flex items-center gap-2 px-4 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors"
+        >
+          <RefreshCw className="h-4 w-4" /> Actualiser les flux
+        </button>
+      </div>
 
-          {/* Section: Commission Payout Requests Claims */}
-          <div className="bg-white rounded-2xl border border-indigo-200 shadow-sm p-6 sm:p-8 space-y-4">
-            <h3 className="font-display font-bold text-base text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-4">
-              <Coins className="h-5 w-5 text-indigo-600" /> Demandes de Retrait de Commissions ({
-                adminPayoutRequests.length
-              })
-            </h3>
+      {/* Messages banner */}
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 text-red-700 dark:text-red-400 rounded-lg text-sm flex items-center gap-2">
+          <AlertCircle className="h-5 w-5 flex-shrink-0" />
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="ml-auto font-semibold hover:underline">Fermer</button>
+        </div>
+      )}
 
-            {loadingAdminPayouts ? (
-              <p className="text-xs text-slate-500 text-center py-6 flex items-center justify-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin text-indigo-600" /> Chargement des demandes de retrait...
-              </p>
-            ) : adminPayoutRequests.length === 0 ? (
-              <p className="text-xs text-slate-500 text-center py-6 bg-slate-50 border border-slate-100 rounded-xl">
-                Aucune demande de retrait de commissions pour l'instant.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-100 text-slate-400 font-mono font-bold uppercase tracking-wider">
-                      <th className="py-3 px-4">Affilié / Code unique</th>
-                      <th className="py-3 px-4">Date Demande</th>
-                      <th className="py-3 px-4 text-right">Montant</th>
-                      <th className="py-3 px-4">Téléphone Mobile Money</th>
-                      <th className="py-3 px-4 text-center">Statut</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {adminPayoutRequests.map((req) => {
-                      // Find the affiliate object to get human name/code
-                      const matchedAff = affiliates.find(a => a.id === req.affiliate_id);
-                      const affiliateName = matchedAff ? matchedAff.nom_complet : "Affilié Inconnu";
-                      const referralCode = matchedAff ? matchedAff.referral_code : "-";
+      {msg && (
+        <div className="mb-6 p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-lg text-sm flex items-center gap-2">
+          <CheckCircle className="h-5 w-5 flex-shrink-0" />
+          <span>{msg}</span>
+          <button onClick={() => setMsg(null)} className="ml-auto font-semibold hover:underline">Fermer</button>
+        </div>
+      )}
 
-                      return (
-                        <tr key={req.id} className="hover:bg-slate-50/75 transition-colors">
-                          <td className="py-3 px-4">
-                            <span className="font-bold text-slate-900 block">{affiliateName}</span>
-                            <span className="text-[10px] text-slate-400 font-mono">Code: {referralCode}</span>
+      {/* Statistics Cards Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <Building className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+            {pendingRecruiters > 0 && (
+              <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></span>
+            )}
+          </div>
+          <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Entreprises en attente</span>
+          <h3 className="text-2xl font-bold text-slate-950 dark:text-white mt-1">{pendingRecruiters}</h3>
+          <p className="text-xs text-slate-400 mt-1">Secteurs et documents justificatifs à valider</p>
+        </div>
+
+        <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <Briefcase className="h-6 w-6 text-sky-600 dark:text-sky-400" />
+            {pendingOffers > 0 && (
+              <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></span>
+            )}
+          </div>
+          <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Offres en modération</span>
+          <h3 className="text-2xl font-bold text-slate-950 dark:text-white mt-1">{pendingOffers}</h3>
+          <p className="text-xs text-slate-400 mt-1">Offres publiées nécessitant vérification</p>
+        </div>
+
+        <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <ShieldAlert className="h-6 w-6 text-rose-600 dark:text-rose-400" />
+            {openReports > 0 && (
+              <span className="h-2.5 w-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+            )}
+          </div>
+          <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Signalements ouverts</span>
+          <h3 className="text-2xl font-bold text-slate-950 dark:text-white mt-1">{openReports}</h3>
+          <p className="text-xs text-slate-400 mt-1">Alertes communautaires pour fraudes ou abus</p>
+        </div>
+
+        <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <Users className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Total Candidats / Recruteurs</span>
+          <h3 className="text-2xl font-bold text-slate-950 dark:text-white mt-1">
+            {userRole === "admin" ? users.length : recruiters.length + reports.length}
+          </h3>
+          <p className="text-xs text-slate-400 mt-1">Membres inscrits sur la plateforme Afrique</p>
+        </div>
+      </div>
+
+      {/* Tabs Navigation */}
+      <div className="flex border-b border-slate-200 dark:border-slate-800 mb-8 overflow-x-auto gap-1">
+        <button
+          onClick={() => setActiveTab("recruiters")}
+          className={`flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm whitespace-nowrap transition-all ${
+            activeTab === "recruiters"
+              ? "border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400"
+              : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+          }`}
+        >
+          <Building className="h-4 w-4" /> Entreprises ({recruiters.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab("offers")}
+          className={`flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm whitespace-nowrap transition-all ${
+            activeTab === "offers"
+              ? "border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400"
+              : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+          }`}
+        >
+          <Briefcase className="h-4 w-4" /> Offres d'emploi ({offers.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab("reports")}
+          className={`flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm whitespace-nowrap transition-all ${
+            activeTab === "reports"
+              ? "border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400"
+              : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+          }`}
+        >
+          <ShieldAlert className="h-4 w-4" /> Signalements ({reports.length})
+        </button>
+
+        {userRole === "admin" && (
+          <>
+            <button
+              onClick={() => setActiveTab("roles")}
+              className={`flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm whitespace-nowrap transition-all ${
+                activeTab === "roles"
+                  ? "border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400"
+                  : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+              }`}
+            >
+              <Users className="h-4 w-4" /> Rôles & Invitations ({users.length})
+            </button>
+
+            <button
+              onClick={() => setActiveTab("audit")}
+              className={`flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm whitespace-nowrap transition-all ${
+                activeTab === "audit"
+                  ? "border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400"
+                  : "border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+              }`}
+            >
+              <Activity className="h-4 w-4" /> Diagnostics & Logs ({auditLogs.length})
+            </button>
+          </>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-16">
+          <Loader2 className="h-10 w-10 text-indigo-600 animate-spin" />
+          <p className="text-sm text-slate-500 mt-2">Chargement des données de modération...</p>
+        </div>
+      ) : (
+        <div id="admin_tab_content">
+          
+          {/* TAB: RECRUITERS */}
+          {activeTab === "recruiters" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Fiches Entreprises</h3>
+                <span className="text-xs text-slate-400">{recruiters.length} fiches chargées</span>
+              </div>
+
+              {recruiters.length === 0 ? (
+                <div className="p-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                  <Building className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+                  <p className="text-slate-500 dark:text-slate-400">Aucun profil d'entreprise n'est enregistré pour le moment.</p>
+                </div>
+              ) : (
+                <div className="overflow-hidden border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">
+                        <th className="px-6 py-4">Entreprise / Logo</th>
+                        <th className="px-6 py-4">Secteur</th>
+                        <th className="px-6 py-4">Site Web</th>
+                        <th className="px-6 py-4">Documents</th>
+                        <th className="px-6 py-4">Statut</th>
+                        <th className="px-6 py-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 text-sm">
+                      {recruiters.map((rec) => (
+                        <tr key={rec.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-950/20">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              {rec.logo_url ? (
+                                <img src={rec.logo_url} alt="Logo" className="h-10 w-10 rounded object-cover border border-slate-200 dark:border-slate-800" />
+                              ) : (
+                                <div className="h-10 w-10 bg-slate-100 dark:bg-slate-800 rounded flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold">
+                                  {rec.nom_entreprise?.substring(0, 2).toUpperCase()}
+                                </div>
+                              )}
+                              <div>
+                                <span className="font-semibold text-slate-950 dark:text-white block">{rec.nom_entreprise}</span>
+                                <span className="text-xs text-slate-400">ID: {rec.id.substring(0, 8)}...</span>
+                              </div>
+                            </div>
                           </td>
-                          <td className="py-3 px-4 text-slate-550 font-mono">
-                            {new Date(req.requested_at).toLocaleString()}
+                          <td className="px-6 py-4 text-slate-700 dark:text-slate-300">{rec.secteur}</td>
+                          <td className="px-6 py-4 text-indigo-600 dark:text-indigo-400">
+                            {rec.site_web ? (
+                              <a href={rec.site_web} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
+                                Visiter <ArrowUpRight className="h-3 w-3" />
+                              </a>
+                            ) : (
+                              <span className="text-slate-400 text-xs">Non spécifié</span>
+                            )}
                           </td>
-                          <td className="py-3 px-4 text-right font-black text-indigo-600 font-mono text-sm">
-                            {req.montant.toLocaleString()} FCFA
+                          <td className="px-6 py-4 text-indigo-600 dark:text-indigo-400">
+                            {rec.verification_documents ? (
+                              <a href={rec.verification_documents} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1 font-semibold">
+                                <FileText className="h-4 w-4" /> Voir PJ
+                              </a>
+                            ) : (
+                              <span className="text-slate-400 text-xs">Aucun document</span>
+                            )}
                           </td>
-                          <td className="py-3 px-4">
-                            <span className="font-mono text-slate-700 font-bold bg-slate-100 px-2 py-0.5 border border-slate-200 rounded">
-                              {req.telephone_paiement}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            {req.statut === "paid" ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase tracking-wider">
-                                <CheckCircle className="h-3 w-3" /> Payé
+                          <td className="px-6 py-4">
+                            {rec.verification_status === "verified" ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/20 rounded border border-emerald-500/20">
+                                <CheckCircle className="h-3 w-3" /> Vérifié
                               </span>
-                            ) : req.statut === "rejected" ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold bg-rose-50 text-rose-700 border border-rose-100 uppercase tracking-wider">
-                                <X className="h-3 w-3" /> Rejeté
+                            ) : rec.verification_status === "rejected" ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-700 bg-rose-50 dark:text-rose-400 dark:bg-rose-950/20 rounded border border-rose-500/20">
+                                <XCircle className="h-3 w-3" /> Rejeté
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold bg-amber-50 text-amber-700 border border-amber-100 uppercase tracking-wider animate-pulse">
-                                <Clock className="h-3 w-3 animate-spin" /> En attente
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-amber-700 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/20 rounded border border-amber-500/20 animate-pulse">
+                                <Clock className="h-3 w-3" /> En attente
                               </span>
                             )}
                           </td>
-                          <td className="py-3 px-4 text-right">
-                            {req.statut === "pending" && (
-                              <div className="flex gap-2 justify-end">
+                          <td className="px-6 py-4 text-right">
+                            {rec.verification_status === "pending" ? (
+                              <div className="flex items-center justify-end gap-2">
                                 <button
-                                  onClick={() => handleRejectPayoutRequest(req.id)}
-                                  className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[10px] font-bold cursor-pointer transition-colors"
+                                  disabled={actionLoading !== null}
+                                  onClick={() => handleVerifyRecruiter(rec.id, "verified")}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded transition-colors"
                                 >
-                                  Rejeter
+                                  {actionLoading === `recruiter-${rec.id}` ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Check className="h-3 w-3" />
+                                  )} Approuver
                                 </button>
                                 <button
-                                  onClick={() => handleMarkPayoutAsPaid(req.id)}
-                                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-bold cursor-pointer transition-colors shadow-sm"
+                                  disabled={actionLoading !== null}
+                                  onClick={() => handleVerifyRecruiter(rec.id, "rejected")}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded transition-colors"
                                 >
-                                  Marquer comme payé
+                                  Refuser
                                 </button>
                               </div>
-                            )}
-                            {req.statut !== "pending" && (
-                              <span className="text-[10px] text-slate-400 font-mono italic">
-                                Traitée le {req.processed_at ? new Date(req.processed_at).toLocaleDateString() : "-"}
-                              </span>
+                            ) : (
+                              <button
+                                disabled={actionLoading !== null}
+                                onClick={() => handleVerifyRecruiter(rec.id, rec.verification_status === "verified" ? "rejected" : "verified")}
+                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs underline font-medium"
+                              >
+                                Changer le statut
+                              </button>
                             )}
                           </td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Section 2: Active Affiliates & stats */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8 space-y-4">
-            <h3 className="font-display font-bold text-base text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-4">
-              <Users className="h-5 w-5 text-indigo-600" /> Tous les Affiliés Actifs ({
-                affiliates.filter(a => a.status === "approved").length
-              })
-            </h3>
-
-            {affiliates.filter(a => a.status === "approved").length === 0 ? (
-              <p className="text-xs text-slate-500 text-center py-6">Aucun affilié actif approuvé pour l'instant.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-100 text-slate-400 font-mono font-bold uppercase tracking-wider">
-                      <th className="py-3 px-4">Affilié / Contact</th>
-                      <th className="py-3 px-4">Code unique</th>
-                      <th className="py-3 px-4 text-center">Statut Compte</th>
-                      <th className="py-3 px-4 text-right">Ventes directes</th>
-                      <th className="py-3 px-4 text-right">Commissions</th>
-                      <th className="py-3 px-4 text-center">Filleuls (Réseau)</th>
-                      <th className="py-3 px-4 text-center">Messagerie</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {affiliates.filter(a => a.status === "approved").map((aff) => (
-                      <tr key={aff.id} className="hover:bg-slate-50/75 transition-colors">
-                        <td className="py-3 px-4">
-                          <span className="font-bold text-slate-900 block">{aff.nom_complet}</span>
-                          <span className="text-[10px] text-slate-400 font-mono">{aff.telephone}</span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="font-mono text-[11px] text-slate-700 bg-slate-50 px-2 py-0.5 border border-slate-200 rounded">{aff.referral_code}</span>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          {aff.activated ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase tracking-wider">
-                              <span className="h-1.5 w-1.5 bg-emerald-500 rounded-full"></span> Activé
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-amber-50 text-amber-700 border border-amber-100 uppercase tracking-wider">
-                              <span className="h-1.5 w-1.5 bg-amber-500 rounded-full"></span> Non Activé
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-right font-bold text-slate-900 font-mono">
-                          {aff.salesCount} ventes
-                        </td>
-                        <td className="py-3 px-4 text-right font-black text-emerald-600 font-mono">
-                          {aff.commissionsSum.toLocaleString()} FCFA
-                        </td>
-                        <td className="py-3 px-4 text-center font-bold text-slate-600 font-mono">
-                          {aff.daughterCount} parrainés
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <button
-                            onClick={() => {
-                              setSelectedChatAffiliate(aff);
-                              fetchChatMessages(aff.id);
-                            }}
-                            className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-200 rounded-xl cursor-pointer transition-all inline-flex items-center gap-1 text-[10px] font-bold"
-                          >
-                            <MessageSquare className="h-3.5 w-3.5" />
-                            <span>Contacter</span>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Section 3: Interactive Messenger Response Hub */}
-          {selectedChatAffiliate && (
-            <div className="bg-white rounded-2xl border border-indigo-200 shadow-md p-6 space-y-4 animate-in fade-in duration-300">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center font-bold text-sm">
-                    {selectedChatAffiliate.nom_complet.substring(0, 2).toUpperCase()}
-                  </div>
-                  <div>
-                    <h3 className="font-display font-bold text-sm text-slate-900 leading-none">
-                      Support avec : {selectedChatAffiliate.nom_complet}
-                    </h3>
-                    <p className="text-[10px] text-indigo-600 font-mono mt-0.5">Code unique : {selectedChatAffiliate.referral_code}</p>
-                  </div>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-                <button
-                  onClick={() => setSelectedChatAffiliate(null)}
-                  className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors"
-                >
-                  <X className="h-5 w-5" />
-                </button>
+              )}
+            </div>
+          )}
+
+          {/* TAB: OFFERS */}
+          {activeTab === "offers" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Offres d'emploi déposées</h3>
+                <span className="text-xs text-slate-400">{offers.length} offres enregistrées</span>
               </div>
 
-              {/* Chat messages viewport */}
-              <div className="max-h-[200px] overflow-y-auto space-y-3 py-2 pr-1">
-                {chatMessages.length === 0 ? (
-                  <p className="text-xs text-slate-400 text-center py-6">Aucun message historique. Envoyez la première communication ci-dessous.</p>
-                ) : (
-                  chatMessages.map((m) => {
-                    const isAdmin = m.sender === "admin";
-                    return (
-                      <div
-                        key={m.id}
-                        className={`flex ${isAdmin ? "justify-end" : "justify-start"} items-end gap-1.5`}
-                      >
-                        {!isAdmin && (
-                          <div className="h-6 w-6 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[10px] font-bold shrink-0 font-mono">
-                            {selectedChatAffiliate.nom_complet.substring(0, 1).toUpperCase()}
+              {offers.length === 0 ? (
+                <div className="p-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                  <Briefcase className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+                  <p className="text-slate-500 dark:text-slate-400">Aucune offre d'emploi n'a encore été déposée.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {offers.map((offer) => (
+                    <div 
+                      key={offer.id} 
+                      className={`p-6 bg-white dark:bg-slate-900 border ${
+                        offer.moderation_status === "pending" 
+                          ? "border-amber-200 dark:border-amber-900/40 bg-amber-50/5" 
+                          : "border-slate-200 dark:border-slate-800"
+                      } rounded-xl shadow-sm`}
+                    >
+                      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            <span className="px-2 py-0.5 text-[11px] font-semibold tracking-wide uppercase rounded bg-indigo-50 text-indigo-700 dark:bg-indigo-950/20 dark:text-indigo-400">
+                              {offer.type_contrat?.toUpperCase()}
+                            </span>
+                            <span className="text-xs text-slate-400">• Posté le {new Date(offer.created_at).toLocaleDateString()}</span>
+                            {offer.is_boosted && (
+                              <span className="px-2 py-0.5 text-[11px] font-semibold uppercase bg-amber-500/10 text-amber-500 rounded border border-amber-500/20 animate-pulse">
+                                BOOSTÉ ⚡
+                              </span>
+                            )}
                           </div>
-                        )}
-                        <div className="max-w-[75%] space-y-0.5">
-                          <div className={`p-2.5 rounded-2xl text-xs leading-relaxed ${
-                            isAdmin
-                              ? "bg-indigo-600 text-white rounded-br-none"
-                              : "bg-slate-200 text-slate-800 rounded-bl-none"
-                          }`}>
-                            {m.message}
+                          <h4 className="text-lg font-bold text-slate-900 dark:text-white">{offer.titre}</h4>
+                          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                            Entreprise : <span className="font-medium text-slate-700 dark:text-slate-300">{offer.entreprise}</span> ({offer.lieu})
+                          </p>
+                          
+                          {/* Competencies badges */}
+                          {offer.competences && offer.competences.length > 0 && (
+                            <div className="flex items-center gap-1.5 flex-wrap mt-3">
+                              {offer.competences.map((c: string, idx: number) => (
+                                <span key={idx} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded text-xs text-slate-600 dark:text-slate-300 font-medium">
+                                  {c}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Collapsible/readable description */}
+                          <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-950/50 rounded-lg text-xs text-slate-600 dark:text-slate-300 line-clamp-3">
+                            {offer.description}
                           </div>
-                          <span className="block text-[8px] text-slate-400 font-mono px-1">
-                            {new Date(m.created_at).toLocaleString()}
-                          </span>
+                        </div>
+
+                        {/* Verification controls */}
+                        <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-slate-400">Modération :</span>
+                            {offer.moderation_status === "approved" ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/20 rounded border border-emerald-500/20">
+                                <CheckCircle className="h-3 w-3" /> Approuvée
+                              </span>
+                            ) : offer.moderation_status === "rejected" ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-700 bg-rose-50 dark:text-rose-400 dark:bg-rose-950/20 rounded border border-rose-500/20">
+                                <XCircle className="h-3 w-3" /> Refusée
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-amber-700 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/20 rounded border border-amber-500/20 animate-pulse">
+                                <Clock className="h-3 w-3" /> En attente
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 mt-2">
+                            {offer.moderation_status === "pending" ? (
+                              <>
+                                <button
+                                  disabled={actionLoading !== null}
+                                  onClick={() => handleVerifyOffer(offer.id, "approved")}
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors"
+                                >
+                                  {actionLoading === `offer-${offer.id}` ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Check className="h-3 w-3" />
+                                  )} Approuver l'offre
+                                </button>
+                                <button
+                                  disabled={actionLoading !== null}
+                                  onClick={() => handleVerifyOffer(offer.id, "rejected")}
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors"
+                                >
+                                  Refuser
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                disabled={actionLoading !== null}
+                                onClick={() => handleVerifyOffer(offer.id, offer.moderation_status === "approved" ? "rejected" : "approved")}
+                                className="text-indigo-600 dark:text-indigo-400 text-xs font-semibold hover:underline"
+                              >
+                                Basculer l'état
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    );
-                  })
-                )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB: REPORTS */}
+          {activeTab === "reports" && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Signalements d'offres suspectes</h3>
+                <span className="text-xs text-slate-400">{reports.length} rapports de signalement</span>
               </div>
 
-              {/* Chat Reply Form */}
-              <form onSubmit={handleSendAdminReply} className="border-t border-slate-100 pt-3 flex gap-2">
-                <input
-                  type="text"
-                  required
-                  placeholder={`Répondre à ${selectedChatAffiliate.nom_complet}...`}
-                  value={adminReplyText}
-                  onChange={(e) => setAdminReplyText(e.target.value)}
-                  className="flex-1 px-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-indigo-500 text-slate-850"
-                />
-                <button
-                  type="submit"
-                  disabled={sendingReply || !adminReplyText.trim()}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shrink-0"
-                >
-                  {sendingReply ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {reports.length === 0 ? (
+                <div className="p-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                  <ShieldCheck className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+                  <p className="text-slate-500 dark:text-slate-400">Aucun signalement d'abus n'a été signalé par la communauté.</p>
+                </div>
+              ) : (
+                <div className="overflow-hidden border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">
+                        <th className="px-6 py-4">Offre signalée</th>
+                        <th className="px-6 py-4">Raison du signalement</th>
+                        <th className="px-6 py-4">Date du signalement</th>
+                        <th className="px-6 py-4">Statut</th>
+                        <th className="px-6 py-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 text-sm">
+                      {reports.map((rep) => (
+                        <tr key={rep.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-950/20">
+                          <td className="px-6 py-4">
+                            <span className="font-semibold text-slate-950 dark:text-white block">
+                              {rep.job_offer?.titre || "Offre d'emploi supprimée"}
+                            </span>
+                            <span className="text-xs text-slate-400">Entreprise : {rep.job_offer?.entreprise}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="max-w-xs text-slate-700 dark:text-slate-300 font-medium">
+                              {rep.raison}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-slate-500">
+                            {new Date(rep.created_at).toLocaleDateString()} {new Date(rep.created_at).toLocaleTimeString()}
+                          </td>
+                          <td className="px-6 py-4">
+                            {rep.statut === "resolved" ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/20 rounded border border-emerald-500/20">
+                                <CheckCircle className="h-3 w-3" /> Résolu
+                              </span>
+                            ) : rep.statut === "dismissed" ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-50 dark:text-slate-400 dark:bg-slate-950/20 rounded border border-slate-500/20">
+                                Classé
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-700 bg-rose-50 dark:text-rose-400 dark:bg-rose-950/20 rounded border border-rose-500/20 animate-pulse">
+                                <AlertCircle className="h-3 w-3" /> Ouvert
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            {rep.statut === "open" ? (
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  disabled={actionLoading !== null}
+                                  onClick={() => handleResolveReport(rep.id, "resolved")}
+                                  className="px-2.5 py-1 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded transition-colors"
+                                >
+                                  Suspendre l'offre
+                                </button>
+                                <button
+                                  disabled={actionLoading !== null}
+                                  onClick={() => handleResolveReport(rep.id, "dismissed")}
+                                  className="px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 rounded transition-colors"
+                                >
+                                  Classer
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-slate-400 font-medium">Traité</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB: ROLES & INVITATIONS */}
+          {activeTab === "roles" && userRole === "admin" && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Left : User List with Role Selector */}
+              <div className="lg:col-span-2 space-y-6">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Droits & Habilitations</h3>
+                
+                <div className="overflow-hidden border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">
+                        <th className="px-6 py-4">Utilisateur</th>
+                        <th className="px-6 py-4">Rôle Actuel</th>
+                        <th className="px-6 py-4 text-right">Modifier le Rôle</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 text-sm">
+                      {users.map((u) => (
+                        <tr key={u.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-950/20">
+                          <td className="px-6 py-4">
+                            <span className="font-semibold text-slate-950 dark:text-white block">{u.email || "Utilisateur"}</span>
+                            <span className="text-xs text-slate-400">UID: {u.id}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={`px-2.5 py-1 text-xs font-semibold rounded-full uppercase ${
+                              u.role === "admin" 
+                                ? "bg-red-50 text-red-700 dark:bg-red-950/20 dark:text-red-400" 
+                                : u.role === "moderator" 
+                                ? "bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400" 
+                                : u.role === "recruiter" 
+                                ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/20 dark:text-indigo-400" 
+                                : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                            }`}>
+                              {u.role || "user"}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            {currentUser?.id === u.id ? (
+                              <span className="text-xs text-slate-400 italic">C'est vous</span>
+                            ) : (
+                              <select
+                                disabled={actionLoading !== null}
+                                value={u.role || "user"}
+                                onChange={(e) => handleChangeRole(u.id, e.target.value)}
+                                className="bg-slate-50 border border-slate-200 rounded text-xs p-1 font-semibold dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                              >
+                                <option value="user">Candidat (User)</option>
+                                <option value="recruiter">Recruteur</option>
+                                <option value="moderator">Modérateur</option>
+                                <option value="admin">Administrateur</option>
+                              </select>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Right: Invitations and role invitations form */}
+              <div className="space-y-6">
+                <div className="p-6 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl">
+                  <h3 className="text-md font-bold text-slate-900 dark:text-white mb-4">Inviter un Collaborateur</h3>
+                  
+                  <form onSubmit={handleCreateInvite} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Email du collaborateur</label>
+                      <input 
+                        required
+                        type="email" 
+                        value={inviteEmail} 
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        placeholder="co-mod@afriquerecrutement.com" 
+                        className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-950 dark:text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-500 mb-1">Rôle assigné par défaut</label>
+                      <select 
+                        value={inviteRole} 
+                        onChange={(e) => setInviteRole(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg text-sm bg-white dark:bg-slate-950 dark:text-white"
+                      >
+                        <option value="recruiter">Recruteur d'office</option>
+                        <option value="moderator">Modérateur système</option>
+                        <option value="admin">Super Administrateur</option>
+                      </select>
+                    </div>
+
+                    <button 
+                      type="submit"
+                      disabled={loading}
+                      className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition-colors"
+                    >
+                      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Inviter par email
+                    </button>
+                  </form>
+                </div>
+
+                {/* Invitations List */}
+                <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
+                  <h3 className="text-md font-bold text-slate-900 dark:text-white mb-4">Invitations Actives</h3>
+                  
+                  {invitations.length === 0 ? (
+                    <p className="text-xs text-slate-400">Aucune invitation envoyée.</p>
                   ) : (
-                    <Send className="h-3.5 w-3.5" />
+                    <div className="space-y-3">
+                      {invitations.map((inv) => (
+                        <div key={inv.id} className="p-3 bg-slate-50 dark:bg-slate-950 rounded-lg text-xs space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-slate-800 dark:text-white">{inv.email}</span>
+                            <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-semibold uppercase text-[9px]">
+                              {inv.role_invited}
+                            </span>
+                          </div>
+                          <div className="text-slate-400">Statut : {inv.status}</div>
+                          {inv.status === "pending" && (
+                            <button
+                              onClick={() => handleRevokeInvitation(inv.id)}
+                              className="text-rose-600 font-semibold hover:underline mt-1 block"
+                            >
+                              Révoquer
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   )}
-                  <span>Répondre</span>
-                </button>
-              </form>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: DIAGNOSTICS & AUDIT LOGS */}
+          {activeTab === "audit" && userRole === "admin" && (
+            <div className="space-y-6">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Diagnostics Système & Journal d'Audit</h3>
+              
+              {/* Diagnostics Grid */}
+              {diagStatus && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <div className="p-5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
+                    <span className="font-semibold text-slate-400 uppercase">Database Link</span>
+                    <p className="text-sm font-bold text-slate-800 dark:text-white mt-1 break-all">{diagStatus.supabaseUrl}</p>
+                    <span className="inline-block px-1.5 py-0.5 bg-emerald-500/10 text-emerald-500 rounded mt-2 font-medium">
+                      {diagStatus.supabaseStatus}
+                    </span>
+                  </div>
+
+                  <div className="p-5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
+                    <span className="font-semibold text-slate-400 uppercase">MoneyFusion API Gateway</span>
+                    <p className="text-sm font-bold text-slate-800 dark:text-white mt-1 break-all">
+                      {diagStatus.moneyfusionStatus || "Inactif"}
+                    </p>
+                  </div>
+
+                  <div className="p-5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
+                    <span className="font-semibold text-slate-400 uppercase">AI Job Generator API</span>
+                    <p className="text-sm font-bold text-slate-800 dark:text-white mt-1 break-all">
+                      {diagStatus.aiJobUrl || "Local Gemini Fallback"}
+                    </p>
+                  </div>
+
+                  <div className="p-5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
+                    <span className="font-semibold text-slate-400 uppercase">Production Status</span>
+                    <p className="text-sm font-bold text-slate-800 dark:text-white mt-1">Real-Time Sync Activated</p>
+                    <span className={`inline-block px-1.5 py-0.5 rounded mt-2 font-semibold ${
+                      diagStatus.isRealProduction ? "bg-emerald-500/15 text-emerald-500" : "bg-amber-500/15 text-amber-500"
+                    }`}>
+                      {diagStatus.isRealProduction ? "PRODUCTION" : "PREVIEW MODE"}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Audit Logs */}
+              <div className="border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 overflow-hidden">
+                <div className="p-4 bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                  <span className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-slate-400" /> Actions Administrateurs Récentes
+                  </span>
+                  <button onClick={fetchAuditLogs} className="text-xs text-indigo-600 hover:underline">Rafraîchir les logs</button>
+                </div>
+
+                <div className="divide-y divide-slate-100 dark:divide-slate-800/60 max-h-96 overflow-y-auto">
+                  {auditLogs.length === 0 ? (
+                    <p className="p-6 text-sm text-slate-400 text-center">Aucune action n'a été loggée pour l'instant.</p>
+                  ) : (
+                    auditLogs.map((log) => (
+                      <div key={log.id} className="p-4 hover:bg-slate-50/50 dark:hover:bg-slate-950/20 text-xs flex items-start gap-3">
+                        <span className="px-2 py-0.5 bg-slate-100 text-slate-600 font-bold rounded flex-shrink-0">
+                          {new Date(log.created_at).toLocaleTimeString()}
+                        </span>
+                        <div>
+                          <p className="text-slate-800 dark:text-slate-200">
+                            <strong>{log.action}</strong> par Admin (ID: {log.actor_id.substring(0, 8)}...)
+                          </p>
+                          {log.target_type && (
+                            <span className="text-[10px] text-indigo-600 block mt-0.5 font-semibold uppercase">
+                              Cible : {log.target_type} (ID: {log.target_id?.substring(0, 8)})
+                            </span>
+                          )}
+                          {log.details && (
+                            <pre className="mt-2 p-2 bg-slate-50 dark:bg-slate-950 rounded border border-slate-200 dark:border-slate-800 font-mono text-[10px] overflow-x-auto text-slate-600 dark:text-slate-400">
+                              {JSON.stringify(log.details, null, 2)}
+                            </pre>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
           )}
 

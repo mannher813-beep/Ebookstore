@@ -29,14 +29,13 @@ function getGoogleGenAI(): GoogleGenAI {
   return aiClient;
 }
 
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(express.json());
 
-// Enable CORS for frontend clients (e.g. Cloudflare Pages or custom domains)
+// Enable CORS
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
@@ -50,7 +49,7 @@ app.use((req, res, next) => {
 const PORT = 3000;
 
 // ==========================================
-// SUPABASE CLIENT INITIALIZATION (FAIL-CLOSED)
+// SUPABASE CLIENT INITIALIZATION
 // ==========================================
 let supabaseClient: any = null;
 
@@ -73,18 +72,63 @@ function getSupabase(): any {
   return supabaseClient;
 }
 
-// Helper to determine if we are in real Supabase production mode
-function isProductionMode() {
+// Middleware to verify user token and populate req.user
+async function verifyUser(req: any, res: any, next: any) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: "Authentification requise : Token manquant." });
+  }
+  const token = authHeader.replace("Bearer ", "");
   try {
-    const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    return !!(url && key);
-  } catch {
-    return false;
+    const supabase = getSupabase();
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) {
+      return res.status(401).json({ error: "Session invalide ou expirée." });
+    }
+    req.user = user;
+    req.token = token;
+    next();
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
   }
 }
 
-// Middleware to verify if the requesting user has the 'admin' role
+// Middleware to verify moderator role
+async function verifyModerator(req: any, res: any, next: any) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: "Accès non autorisé : Token manquant." });
+  }
+  const token = authHeader.replace("Bearer ", "");
+  try {
+    const supabase = getSupabase();
+    const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
+    if (userErr || !user) {
+      return res.status(401).json({ error: "Session expirée." });
+    }
+
+    req.user = user;
+    if (user.email === "techsen237@gmail.com") {
+      return next(); // Super Admin
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profile?.role === "moderator" || profile?.role === "admin") {
+      return next();
+    }
+
+    return res.status(403).json({ error: "Droits de modérateur requis." });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+// Middleware to verify admin role
 async function verifyAdmin(req: any, res: any, next: any) {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
@@ -92,33 +136,46 @@ async function verifyAdmin(req: any, res: any, next: any) {
   }
   const token = authHeader.replace("Bearer ", "");
   try {
-    const client = getSupabase();
-    const { data: { user }, error: userErr } = await client.auth.getUser(token);
+    const supabase = getSupabase();
+    const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
     if (userErr || !user) {
-      return res.status(401).json({ error: "Session d'administration invalide ou expirée." });
+      return res.status(401).json({ error: "Session expirée." });
     }
 
+    req.user = user;
     if (user.email === "techsen237@gmail.com") {
-      return next(); // Always allow the super-admin email
+      return next(); // Super Admin
     }
 
-    const { data: profile, error: profileErr } = await client
+    const { data: profile } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .maybeSingle();
 
-    if (profileErr) {
-      return res.status(500).json({ error: "Erreur lors de la vérification du profil d'administration." });
-    }
-
     if (profile?.role === "admin") {
       return next();
     }
 
-    return res.status(403).json({ error: "Accès refusé. Droits d'administrateur requis." });
+    return res.status(403).json({ error: "Droits d'administrateur requis." });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
+  }
+}
+
+// Helper to log admin actions
+async function logAdminAction(actorId: string, action: string, targetType?: string, targetId?: string, details?: any) {
+  try {
+    const supabase = getSupabase();
+    await supabase.from("admin_actions_log").insert({
+      actor_id: actorId,
+      action,
+      target_type: targetType || null,
+      target_id: targetId || null,
+      details: details || null
+    });
+  } catch (err) {
+    console.error("Failed to log admin action:", err);
   }
 }
 
@@ -126,593 +183,950 @@ async function verifyAdmin(req: any, res: any, next: any) {
 // API ENDPOINTS
 // ==========================================
 
-// Check configuration status & diagnose missing environment variables
+// Config status diagnostic
 app.get("/api/config-status", async (req, res) => {
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ? "Configuré" : "";
   const moneyfusionUrl = process.env.MONEYFUSION_API_URL || "";
+  const aiJobUrl = process.env.AI_JOB_GENERATION_API_URL || "";
 
-  let supabaseUrlStatus = "Non configuré";
-  let supabaseServiceKeyStatus = "Non configuré";
+  let supabaseStatus = "Non connecté";
   let moneyfusionStatus = "Non configuré";
 
-  const missingServerVars: string[] = [];
-  if (!supabaseUrl) missingServerVars.push("VITE_SUPABASE_URL");
-  if (!supabaseServiceKey) missingServerVars.push("SUPABASE_SERVICE_ROLE_KEY");
-  if (!moneyfusionUrl) missingServerVars.push("MONEYFUSION_API_URL");
-
-  // 1. Live Check Supabase and Key connection
   if (supabaseUrl && supabaseServiceKey) {
     try {
       const client = getSupabase();
-      // Probe by selecting 1 row from ebooks (safely proves endpoint & service role bypass are working)
-      const { data, error } = await client
-        .from("ebooks")
-        .select("id")
-        .limit(1);
-
+      const { error } = await client.from("profiles").select("id").limit(1);
       if (error) {
-        supabaseUrlStatus = `Erreur : ${error.message}`;
-        supabaseServiceKeyStatus = `Erreur : ${error.message}`;
+        supabaseStatus = `Erreur : ${error.message}`;
       } else {
-        supabaseUrlStatus = `${supabaseUrl} (Connecté)`;
-        supabaseServiceKeyStatus = "Connecté (Service Role Actif)";
+        supabaseStatus = "Connecté (Service Role Actif)";
       }
     } catch (err: any) {
-      supabaseUrlStatus = `Erreur de connexion : ${err.message || err}`;
-      supabaseServiceKeyStatus = `Erreur : ${err.message || err}`;
+      supabaseStatus = `Erreur de connexion : ${err.message || err}`;
     }
-  } else {
-    if (!supabaseUrl) supabaseUrlStatus = "Erreur : URL manquante";
-    if (!supabaseServiceKey) supabaseServiceKeyStatus = "Erreur : Clé de service manquante";
   }
 
-  // 2. Live Check MoneyFusion endpoint
   if (moneyfusionUrl) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-      
-      const probeRes = await fetch(moneyfusionUrl, {
-        method: "GET",
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-
-      // Any HTTP response means the host resolved and responded
-      moneyfusionStatus = `${moneyfusionUrl} (Connecté)`;
-    } catch (err: any) {
-      if (err.name === "AbortError") {
-        moneyfusionStatus = `${moneyfusionUrl} (Erreur : Délai d'attente de connexion dépassé)`;
-      } else {
-        moneyfusionStatus = `${moneyfusionUrl} (Erreur de connexion)`;
-      }
-    }
-  } else {
-    moneyfusionStatus = "Erreur : URL MoneyFusion manquante";
+    moneyfusionStatus = `${moneyfusionUrl} (Configuré)`;
   }
 
   res.json({
-    supabaseUrl: supabaseUrlStatus,
-    supabaseServiceKey: supabaseServiceKeyStatus,
-    moneyfusionUrl: moneyfusionStatus,
-    isRealProduction: missingServerVars.length === 0 && !supabaseServiceKeyStatus.includes("Erreur"),
-    missingServerVars,
+    supabaseUrl,
+    supabaseStatus,
+    moneyfusionStatus,
+    aiJobUrl,
+    isRealProduction: supabaseStatus.includes("Connecté") && !!moneyfusionUrl
   });
 });
 
-// 1. Catalogue d'ebooks (List ebooks)
-app.get("/api/ebooks", async (req, res) => {
+// Get user profile & recruiter data
+app.get("/api/user-data", verifyUser, async (req: any, res) => {
   try {
-    const client = getSupabase();
-    const { data, error } = await client
-      .from("ebooks")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const supabase = getSupabase();
+    const userId = req.user.id;
 
-    if (error) throw error;
-    return res.json(data);
-  } catch (err: any) {
-    console.error("Supabase select ebooks error:", err);
-    return res.status(500).json({ error: err.message });
-  }
-});
-
-// Add ebook (Admin role)
-app.post("/api/ebooks", verifyAdmin, async (req, res) => {
-  const { titre, description, prix, url_couverture, url_fichier_storage, categorie } = req.body;
-
-  if (!titre || !description || !prix || !url_couverture || !url_fichier_storage || !categorie) {
-    return res.status(400).json({ error: "Tous les champs sont obligatoires." });
-  }
-
-  try {
-    const client = getSupabase();
-    const { data, error } = await client
-      .from("ebooks")
-      .insert([{ titre, description, prix: Number(prix), url_couverture, url_fichier_storage, categorie }])
-      .select();
-
-    if (error) throw error;
-    return res.status(201).json(data[0]);
-  } catch (err: any) {
-    console.error("Supabase insert ebook error:", err);
-    return res.status(500).json({ error: err.message });
-  }
-});
-
-// Delete ebook (Admin role)
-app.delete("/api/ebooks/:id", verifyAdmin, async (req, res) => {
-  const { id } = req.params;
-  try {
-    const client = getSupabase();
-    const { error } = await client.from("ebooks").delete().eq("id", id);
-    if (error) throw error;
-    return res.json({ success: true });
-  } catch (err: any) {
-    console.error("Supabase delete ebook error:", err);
-    return res.status(500).json({ error: err.message });
-  }
-});
-
-// Get profile and purchases of connected user
-app.get("/api/user-data", async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return res.status(401).json({ error: "Non authentifié" });
-  }
-
-  const token = authHeader.replace("Bearer ", "");
-
-  try {
-    const client = getSupabase();
-    
-    // Decode user auth via Supabase
-    const { data: { user }, error: authErr } = await client.auth.getUser(token);
-    if (authErr || !user) {
-      return res.status(401).json({ error: "Token invalide ou expiré" });
-    }
-
-    // Fetch Profile safely using maybeSingle to avoid throwing exceptions
-    const { data: profile, error: profileErr } = await client
+    // Load Profile
+    const { data: profile } = await supabase
       .from("profiles")
-      .select("role")
-      .eq("id", user.id)
+      .select("*")
+      .eq("id", userId)
       .maybeSingle();
 
-    if (profileErr) {
-      console.warn("Could not fetch profile, falling back to 'user':", profileErr.message);
-    }
+    // Fetch recruiter profile
+    const { data: recruiterProfile } = await supabase
+      .from("recruiter_profiles")
+      .select("*")
+      .eq("id", userId)
+      .maybeSingle();
 
-    // Fetch Purchases with joined ebook info
-    const { data: purchases } = await client
-      .from("achats")
-      .select("*, ebook:ebook_id(*)")
-      .eq("user_id", user.id);
-
-    // Hardcoded fallback for the admin email to guarantee back-office access
+    // Check superadmin email overriding
     let finalRole = profile?.role || "user";
-    if (user.email === "techsen237@gmail.com") {
+    if (req.user.email === "techsen237@gmail.com") {
       finalRole = "admin";
     }
 
     return res.json({
-      user: { id: user.id, email: user.email },
+      user: { id: userId, email: req.user.email },
       role: finalRole,
-      purchases: purchases || [],
+      profile: profile || { id: userId, role: finalRole },
+      recruiterProfile
     });
   } catch (err: any) {
-    console.error("Supabase user-data fetch error:", err);
     return res.status(500).json({ error: err.message });
   }
 });
 
-// Fetch transaction history (Admin only)
-app.get("/api/transactions", verifyAdmin, async (req, res) => {
+// ==========================================
+// RECRUITER PROFILES
+// ==========================================
+
+// Get recruiter profile
+app.get("/api/recruiter/profile", verifyUser, async (req: any, res) => {
   try {
-    const client = getSupabase();
-    const { data, error } = await client
-      .from("achats")
-      .select("*, ebook:ebook_id(titre)")
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("recruiter_profiles")
+      .select("*")
+      .eq("id", req.user.id)
+      .maybeSingle();
+
+    if (error) throw error;
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Create or update recruiter profile
+app.post("/api/recruiter/profile", verifyUser, async (req: any, res) => {
+  const { nom_entreprise, secteur, site_web, description, logo_url, verification_documents } = req.body;
+
+  if (!nom_entreprise || !secteur || !description) {
+    return res.status(400).json({ error: "Le nom de l'entreprise, le secteur et la description sont requis." });
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    // Check if profile exists to determine if we overwrite verification_status
+    const { data: existing } = await supabase
+      .from("recruiter_profiles")
+      .select("verification_status")
+      .eq("id", req.user.id)
+      .maybeSingle();
+
+    const status = existing ? existing.verification_status : "pending";
+
+    const payload = {
+      id: req.user.id,
+      nom_entreprise,
+      secteur,
+      site_web: site_web || null,
+      description,
+      logo_url: logo_url || null,
+      verification_status: status,
+      verification_documents: verification_documents || null,
+      updated_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from("recruiter_profiles")
+      .upsert(payload)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Automatically trigger role update to 'recruiter' if user role is 'user'
+    const { data: currentProf } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", req.user.id)
+      .maybeSingle();
+
+    if (currentProf?.role === "user") {
+      await supabase
+        .from("profiles")
+        .update({ role: "recruiter" })
+        .eq("id", req.user.id);
+    }
+
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Get candidates matching recruiter's posted offers
+app.get("/api/recruiter/candidates", verifyUser, async (req: any, res) => {
+  try {
+    const supabase = getSupabase();
+
+    // Fetch active job offers posted by recruiter
+    const { data: offers } = await supabase
+      .from("job_offers")
+      .select("competences, secteur")
+      .eq("recruiter_id", req.user.id)
+      .eq("statut", "active");
+
+    // Fetch public CVs
+    const { data: cvs, error } = await supabase
+      .from("cvs")
+      .select("*")
+      .eq("is_public", true);
+
+    if (error) throw error;
+
+    if (!offers || offers.length === 0) {
+      // Just return standard order CVs
+      return res.json(cvs || []);
+    }
+
+    // Match algorithm: prioritize CVs that have matching sector or competencies
+    const matchedCvs = (cvs || []).map((cv: any) => {
+      let score = 0;
+      const cvComps = cv.competences || cv.data?.competences || [];
+
+      for (const offer of offers) {
+        if (cv.secteur && offer.secteur && cv.secteur.toLowerCase() === offer.secteur.toLowerCase()) {
+          score += 10;
+        }
+        const offerComps = offer.competences || [];
+        const overlap = cvComps.filter((c: string) => offerComps.some((o: string) => o.toLowerCase() === c.toLowerCase()));
+        score += overlap.length * 5;
+      }
+
+      return { ...cv, score };
+    }).sort((a: any, b: any) => b.score - a.score);
+
+    return res.json(matchedCvs);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ==========================================
+// JOB OFFERS
+// ==========================================
+
+// Get all active & approved job offers
+app.get("/api/jobs", async (req, res) => {
+  try {
+    const supabase = getSupabase();
+    // Public offers: active status AND approved moderation status
+    const { data, error } = await supabase
+      .from("job_offers")
+      .select("*, recruiter:recruiter_profiles(*)")
+      .eq("statut", "active")
+      .eq("moderation_status", "approved")
+      .order("is_boosted", { ascending: false })
       .order("created_at", { ascending: false });
 
     if (error) throw error;
     return res.json(data);
   } catch (err: any) {
-    console.error("Supabase fetch transactions error:", err);
     return res.status(500).json({ error: err.message });
   }
 });
 
-// 2. Création d'une demande de paiement MoneyFusion
-app.post("/api/payments/create", async (req, res) => {
-  const { ebookId, userId, numeroSend, nomclient, userEmail } = req.body;
-
-  if (!ebookId || !userId || !numeroSend || !nomclient) {
-    return res.status(400).json({ error: "Informations manquantes." });
-  }
-
-  const client = getSupabase();
-  const moneyfusionApiUrl = process.env.MONEYFUSION_API_URL;
-
-  if (!moneyfusionApiUrl) {
-    return res.status(500).json({ error: "Service de paiement MoneyFusion non configuré (MONEYFUSION_API_URL manquant)." });
-  }
-
+// Get recruiter's own job offers
+app.get("/api/jobs/my", verifyUser, async (req: any, res) => {
   try {
-    // Find price of ebook
-    const { data: ebook } = await client
-      .from("ebooks")
-      .select("prix, titre")
-      .eq("id", ebookId)
-      .single();
-
-    if (!ebook) {
-      return res.status(404).json({ error: "Ebook non trouvé" });
-    }
-    const price = Number(ebook.prix);
-    const ebookTitle = ebook.titre;
-
-    const orderId = "order_" + Math.random().toString(36).substr(2, 9);
-    const tokenPay = "mf_tok_" + Math.random().toString(36).substr(2, 14);
-
-    // Register the transaction entry with status 'pending'
-    const { error: insertErr } = await client.from("achats").insert([
-      {
-        user_id: userId,
-        ebook_id: ebookId,
-        token_pay: tokenPay,
-        statut: "pending",
-        montant: price,
-      }
-    ]);
-    if (insertErr) throw insertErr;
-
-    const appUrl = process.env.APP_URL || `http://localhost:${PORT}`;
-
-    // Build MoneyFusion payload as specified in documentation
-    const payload = {
-      totalPrice: price,
-      article: [{ [ebookTitle]: price }],
-      personal_Info: [{ userId, orderId, ebookId }],
-      numeroSend,
-      nomclient,
-      return_url: "https://ebookstore-73b.pages.dev/?payment=success",
-      webhook_url: `${appUrl}/api/webhook/moneyfusion`,
-    };
-
-    console.log("Sending real payment request to MoneyFusion API:", moneyfusionApiUrl, payload);
-    const response = await fetch(moneyfusionApiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": process.env.MONEYFUSION_PRIVATE_KEY ? `Bearer ${process.env.MONEYFUSION_PRIVATE_KEY}` : "",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await response.json();
-    console.log("MoneyFusion API Response:", data);
-
-    if (data.statut) {
-      // Update local purchase record with the actual token returned if different
-      const returnedToken = data.token || tokenPay;
-      if (returnedToken !== tokenPay) {
-        await client
-          .from("achats")
-          .update({ token_pay: returnedToken })
-          .eq("token_pay", tokenPay);
-      }
-
-      return res.json({
-        statut: true,
-        token: returnedToken,
-        message: "paiement en cours",
-        url: data.url, // Redirect URL to MoneyFusion Checkout
-      });
-    } else {
-      return res.status(400).json({ error: data.message || "Échec de l'initialisation du paiement MoneyFusion" });
-    }
-  } catch (err: any) {
-    console.error("MoneyFusion payment creation error:", err);
-    return res.status(502).json({ error: "Erreur de communication avec la plateforme de paiement : " + err.message });
-  }
-});
-
-// 3. Webhook MoneyFusion (`POST /api/webhook/moneyfusion`)
-app.post("/api/webhook/moneyfusion", async (req, res) => {
-  const payload = req.body;
-  console.log("RECEIVED MONEYFUSION WEBHOOK:", JSON.stringify(payload, null, 2));
-
-  const { event, tokenPay } = payload;
-
-  if (!tokenPay) {
-    return res.status(400).json({ error: "tokenPay requis" });
-  }
-
-  try {
-    const client = getSupabase();
-
-    // Find transactions
-    const { data: existingAchats } = await client
-      .from("achats")
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("job_offers")
       .select("*")
-      .eq("token_pay", tokenPay);
+      .eq("recruiter_id", req.user.id)
+      .order("created_at", { ascending: false });
 
-    if (!existingAchats || existingAchats.length === 0) {
-      console.warn(`Webhook Error: Transactions with tokenPay ${tokenPay} not found in database.`);
-      return res.status(404).json({ error: "Transactions non trouvées" });
-    }
-
-    // Status mapping from MoneyFusion events
-    let targetStatus = "pending";
-    if (event === "payin.session.completed") {
-      targetStatus = "paid";
-    } else if (event === "payin.session.cancelled") {
-      targetStatus = "failure";
-    }
-
-    // Avoid duplicate updates (MoneyFusion redundant notifications handler as specified)
-    const allMatching = existingAchats.every((item: any) => item.statut === targetStatus);
-    if (allMatching) {
-      console.log(`Webhook Ignored: Redundant status update for tokenPay ${tokenPay} (${targetStatus})`);
-      return res.json({ message: "Notification redondante ignorée", success: true });
-    }
-
-    // Update status
-    const { error: updateErr } = await client
-      .from("achats")
-      .update({ statut: targetStatus })
-      .eq("token_pay", tokenPay);
-
-    if (updateErr) throw updateErr;
-    console.log(`Transactions ${tokenPay} status updated to ${targetStatus} in Supabase.`);
-    return res.json({ message: "Statuts mis à jour avec succès", success: true });
+    if (error) throw error;
+    return res.json(data);
   } catch (err: any) {
-    console.error("Database update error during webhook:", err);
-    return res.status(500).json({ error: "Erreur de mise à jour de la transaction : " + err.message });
-  }
-});
-
-// 4. Vérification de statut (GET /api/payments/status/:token)
-app.get("/api/payments/status/:token", async (req, res) => {
-  const { token } = req.params;
-
-  try {
-    const client = getSupabase();
-
-    const { data: existingAchats } = await client
-      .from("achats")
-      .select("*, ebook:ebook_id(*)")
-      .eq("token_pay", token);
-
-    if (!existingAchats || existingAchats.length === 0) {
-      return res.status(404).json({ error: "Transactions non trouvées" });
-    }
-
-    const firstAchat = existingAchats[0];
-
-    // Query MoneyFusion server directly to sync statuses if pending
-    const moneyfusionUrl = process.env.MONEYFUSION_API_URL;
-    if (firstAchat.statut === "pending" && moneyfusionUrl) {
-      try {
-        const statusApiUrl = `https://www.pay.moneyfusion.net/paiementNotif/${token}`;
-        console.log(`Polling MoneyFusion API status directly for token: ${token} at ${statusApiUrl}`);
-        const checkRes = await fetch(statusApiUrl);
-        const data = await checkRes.json();
-
-        if (data.statut && data.data) {
-          let externalStatus = data.data.statut; // pending, failure, no paid, paid
-          let targetStatus = "pending";
-
-          if (externalStatus === "paid") targetStatus = "paid";
-          else if (externalStatus === "failure" || externalStatus === "no paid") targetStatus = "failure";
-
-          if (firstAchat.statut !== targetStatus) {
-            await client
-              .from("achats")
-              .update({ statut: targetStatus })
-              .eq("token_pay", token);
-            
-            existingAchats.forEach((item: any) => {
-              item.statut = targetStatus;
-            });
-          }
-        }
-      } catch (err) {
-        console.error("Failed to fetch direct status from MoneyFusion endpoint:", err);
-      }
-    }
-
-    return res.json(existingAchats);
-  } catch (err: any) {
-    console.error("Error checking payment status:", err);
     return res.status(500).json({ error: err.message });
   }
 });
 
-// 2b. Création d'une demande de paiement par lot (Panier) MoneyFusion
-app.post("/api/payments/create-batch", async (req, res) => {
-  const { ebookIds, userId, numeroSend, nomclient, userEmail, affiliateId } = req.body;
-
-  if (!ebookIds || !Array.isArray(ebookIds) || ebookIds.length === 0 || !userId || !numeroSend || !nomclient) {
-    return res.status(400).json({ error: "Informations de panier manquantes." });
-  }
-
-  const client = getSupabase();
-  const moneyfusionApiUrl = process.env.MONEYFUSION_API_URL;
-
-  if (!moneyfusionApiUrl) {
-    return res.status(500).json({ error: "Service de paiement MoneyFusion non configuré (MONEYFUSION_API_URL manquant)." });
-  }
-
+// Single job detail (and increment views)
+app.get("/api/jobs/:id", async (req, res) => {
+  const { id } = req.params;
   try {
-    const { data: ebooks, error: fetchErr } = await client
-      .from("ebooks")
-      .select("id, prix, titre")
-      .in("id", ebookIds);
-
-    if (fetchErr || !ebooks || ebooks.length === 0) {
-      return res.status(404).json({ error: "Aucun ebook trouvé dans le panier." });
-    }
-
-    const orderId = "order_cart_" + Math.random().toString(36).substr(2, 9);
-    const tokenPay = "mf_tok_cart_" + Math.random().toString(36).substr(2, 14);
-
-    const paidEbooks = ebooks.filter(item => Number(item.prix) > 0);
-    const totalPrice = paidEbooks.reduce((sum, item) => sum + Number(item.prix), 0);
-
-    const insertPayload = ebooks.map(item => ({
-      user_id: userId,
-      ebook_id: item.id,
-      token_pay: tokenPay,
-      statut: Number(item.prix) === 0 ? "paid" : "pending",
-      montant: Number(item.prix),
-      affiliate_id: affiliateId || null
-    }));
-
-    const { error: insertErr } = await client.from("achats").insert(insertPayload);
-    if (insertErr) throw insertErr;
-
-    if (totalPrice === 0) {
-      return res.json({
-        statut: true,
-        token: tokenPay,
-        freeOnly: true,
-        message: "panier gratuit traité avec succès",
-      });
-    }
-
-    const appUrl = process.env.APP_URL || `http://localhost:3000`;
-
-    const article = paidEbooks.map(item => ({ [item.titre]: Number(item.prix) }));
-    const personal_Info = paidEbooks.map(item => ({
-      userId,
-      orderId,
-      ebookId: item.id
-    }));
-
-    const payload = {
-      totalPrice,
-      article,
-      personal_Info,
-      numeroSend,
-      nomclient,
-      return_url: "https://ebookstore-73b.pages.dev/?payment=success",
-      webhook_url: `${appUrl}/api/webhook/moneyfusion`,
-    };
-
-    console.log("Sending real batch payment request to MoneyFusion API:", moneyfusionApiUrl, payload);
-    const response = await fetch(moneyfusionApiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": process.env.MONEYFUSION_PRIVATE_KEY ? `Bearer ${process.env.MONEYFUSION_PRIVATE_KEY}` : "",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await response.json();
-    console.log("MoneyFusion API Response:", data);
-
-    if (data.statut) {
-      const returnedToken = data.token || tokenPay;
-      if (returnedToken !== tokenPay) {
-        await client
-          .from("achats")
-          .update({ token_pay: returnedToken })
-          .eq("token_pay", tokenPay);
-      }
-
-      return res.json({
-        statut: true,
-        token: returnedToken,
-        message: "paiement en cours",
-        url: data.url,
-      });
-    } else {
-      return res.status(400).json({ error: data.message || "Échec de l'initialisation du paiement MoneyFusion pour le panier" });
-    }
-  } catch (err: any) {
-    console.error("MoneyFusion batch payment creation error:", err);
-    return res.status(502).json({ error: "Erreur de communication avec la plateforme de paiement : " + err.message });
-  }
-});
-
-// 5. Génération d'URL de téléchargement sécurisée et signée Supabase Storage
-app.get("/api/download/:ebookId", async (req, res) => {
-  const { ebookId } = req.params;
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader) {
-    return res.status(401).json({ error: "Veuillez vous connecter pour télécharger cet ebook." });
-  }
-
-  const token = authHeader.replace("Bearer ", "");
-
-  try {
-    const client = getSupabase();
-    
-    // Decode user auth
-    const { data: { user }, error: authErr } = await client.auth.getUser(token);
-    if (authErr || !user) {
-      return res.status(401).json({ error: "Session expirée. Veuillez vous reconnecter." });
-    }
-
-    // Check if user has purchased this ebook with 'paid' status
-    const { data: purchase, error: purchaseErr } = await client
-      .from("achats")
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("ebook_id", ebookId)
-      .eq("statut", "paid")
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("job_offers")
+      .select("*, recruiter:recruiter_profiles(*)")
+      .eq("id", id)
       .maybeSingle();
 
-    if (purchaseErr || !purchase) {
-      return res.status(403).json({ error: "Vous n'avez pas acheté cet ebook ou le paiement est toujours en cours." });
+    if (error) throw error;
+    if (!data) {
+      return res.status(404).json({ error: "Offre d'emploi introuvable." });
     }
 
-    // Retrieve ebook record for file storage path
-    const { data: ebook } = await client
-      .from("ebooks")
-      .select("url_fichier_storage")
-      .eq("id", ebookId)
-      .single();
-
-    if (!ebook || !ebook.url_fichier_storage) {
-      return res.status(404).json({ error: "Fichier d'ebook non trouvé sur notre serveur." });
-    }
-
-    // Generate a signed URL for the private bucket "ebooks-fichiers" that expires in 60 seconds
-    const bucketName = "ebooks-fichiers";
-    console.log(`[DOWNLOAD DEBUG] Génération URL signée - Bucket: "${bucketName}", Path du fichier: "${ebook.url_fichier_storage}"`);
-    const { data: signedUrlData, error: storageErr } = await client.storage
-      .from(bucketName)
-      .createSignedUrl(ebook.url_fichier_storage, 60);
-
-    if (storageErr || !signedUrlData) {
-      throw storageErr || new Error("Échec de la génération du lien sécurisé.");
-    }
-
-    return res.json({
-      url: signedUrlData.signedUrl,
-      expiresIn: 60,
-      filename: ebook.url_fichier_storage,
+    // Increment views asynchronously
+    await supabase.rpc("increment_job_views", { job_id: id }).catch(() => {
+      // Fallback update if RPC not present
+      supabase.from("job_offers").update({ vues: (data.vues || 0) + 1 }).eq("id", id);
     });
+
+    return res.json(data);
   } catch (err: any) {
-    console.error("Download signer error:", err);
-    return res.status(500).json({ error: "Une erreur est survenue lors de la signature : " + err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
-// 6. Génération de résumé de CV par IA (Gemini 3.5 Flash)
-app.post("/api/cv/generate-summary", async (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return res.status(401).json({ error: "Veuillez vous connecter pour générer un résumé." });
+// Create/Update Job Offer
+app.post("/api/jobs", verifyUser, async (req: any, res) => {
+  const {
+    id,
+    titre,
+    description,
+    entreprise,
+    lieu,
+    secteur,
+    type_contrat,
+    remote,
+    salaire_min,
+    salaire_max,
+    devise,
+    competences,
+    statut,
+  } = req.body;
+
+  if (!titre || !description || !entreprise || !lieu || !secteur || !type_contrat) {
+    return res.status(400).json({ error: "Tous les champs principaux de l'offre d'emploi sont obligatoires." });
   }
 
-  const token = authHeader.replace("Bearer ", "");
+  try {
+    const supabase = getSupabase();
+
+    // Verify company profile is set
+    const { data: recProfile } = await supabase
+      .from("recruiter_profiles")
+      .select("verification_status")
+      .eq("id", req.user.id)
+      .maybeSingle();
+
+    if (!recProfile) {
+      return res.status(403).json({ error: "Veuillez configurer votre fiche entreprise avant de publier." });
+    }
+
+    // A recruiter can only publish active offers if they are verified
+    if (statut === "active" && recProfile.verification_status !== "verified") {
+      return res.status(403).json({ error: "Votre entreprise n'est pas encore vérifiée par un modérateur. Vous pouvez enregistrer l'offre en 'brouillon' (draft)." });
+    }
+
+    // Generate unique slug
+    const cleanSlug = titre.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") + "-" + Math.random().toString(36).substring(2, 7);
+
+    const payload = {
+      recruiter_id: req.user.id,
+      titre,
+      slug: cleanSlug,
+      description,
+      entreprise,
+      lieu,
+      secteur,
+      type_contrat,
+      remote: !!remote,
+      salaire_min: salaire_min ? Number(salaire_min) : null,
+      salaire_max: salaire_max ? Number(salaire_max) : null,
+      devise: devise || "XAF",
+      competences: competences || [],
+      statut: statut || "draft",
+      moderation_status: statut === "active" ? "pending" : "approved", // published starts in pending
+      updated_at: new Date().toISOString()
+    };
+
+    let result;
+    if (id) {
+      // Update
+      const { data, error } = await supabase
+        .from("job_offers")
+        .update(payload)
+        .eq("id", id)
+        .eq("recruiter_id", req.user.id)
+        .select()
+        .single();
+      if (error) throw error;
+      result = data;
+    } else {
+      // Insert
+      const { data, error } = await supabase
+        .from("job_offers")
+        .insert([{ ...payload, id: undefined, created_at: new Date().toISOString() }])
+        .select()
+        .single();
+      if (error) throw error;
+      result = data;
+    }
+
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Apply to a Job Offer
+app.post("/api/jobs/:id/apply", verifyUser, async (req: any, res) => {
+  const { id } = req.params;
+  const { cv_id, bio_id, message } = req.body;
+
+  try {
+    const supabase = getSupabase();
+
+    // Verify job exists
+    const { data: job } = await supabase
+      .from("job_offers")
+      .select("id, titre")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!job) {
+      return res.status(404).json({ error: "Offre d'emploi introuvable." });
+    }
+
+    // Check unique constraint (user can apply only once per job)
+    const { data: existingApp } = await supabase
+      .from("job_applications")
+      .select("id")
+      .eq("job_offer_id", id)
+      .eq("user_id", req.user.id)
+      .maybeSingle();
+
+    if (existingApp) {
+      return res.status(400).json({ error: "Vous avez déjà postulé à cette offre." });
+    }
+
+    const payload = {
+      job_offer_id: id,
+      user_id: req.user.id,
+      cv_id: cv_id || null,
+      bio_id: bio_id || null,
+      message: message || "",
+      statut: "envoyee",
+      created_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from("job_applications")
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Report a Job Offer
+app.post("/api/jobs/:id/report", verifyUser, async (req: any, res) => {
+  const { id } = req.params;
+  const { raison } = req.body;
+
+  if (!raison) {
+    return res.status(400).json({ error: "Veuillez fournir une raison pour le signalement." });
+  }
+
+  try {
+    const supabase = getSupabase();
+    const payload = {
+      job_offer_id: id,
+      reporter_user_id: req.user.id,
+      raison,
+      statut: "open",
+      created_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from("job_offer_reports")
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Check count of open reports for this job. If > 3, return offer back to pending moderation
+    const { data: countData } = await supabase
+      .from("job_offer_reports")
+      .select("id", { count: "exact" })
+      .eq("job_offer_id", id)
+      .eq("statut", "open");
+
+    const count = countData ? countData.length : 0;
+    if (count >= 3) {
+      await supabase
+        .from("job_offers")
+        .update({ moderation_status: "pending", moderation_note: "Offre temporairement suspendue suite à de multiples signalements." })
+        .eq("id", id);
+    }
+
+    return res.json({ success: true, report: data });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ==========================================
+// CANDIDATURES (JOB APPLICATIONS)
+// ==========================================
+
+// Candidate: List my applications
+app.get("/api/applications/my", verifyUser, async (req: any, res) => {
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("job_applications")
+      .select("*, job_offer:job_offers(*)")
+      .eq("user_id", req.user.id)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Recruiter: List applications received
+app.get("/api/applications/recruiter", verifyUser, async (req: any, res) => {
+  try {
+    const supabase = getSupabase();
+
+    // Fetch recruiter's offers
+    const { data: offers } = await supabase
+      .from("job_offers")
+      .select("id")
+      .eq("recruiter_id", req.user.id);
+
+    if (!offers || offers.length === 0) {
+      return res.json([]);
+    }
+
+    const offerIds = offers.map((o: any) => o.id);
+
+    // Fetch applications linked to recruiter's offers
+    const { data: apps, error } = await supabase
+      .from("job_applications")
+      .select("*, job_offer:job_offers(*), cv:cvs(*), bio:bios(*)")
+      .in("job_offer_id", offerIds)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    // Mark apps as 'vue' if they are 'envoyee' when recruiter queries them
+    const pendingIds = apps.filter((a: any) => a.statut === "envoyee").map((a: any) => a.id);
+    if (pendingIds.length > 0) {
+      await supabase
+        .from("job_applications")
+        .update({ statut: "vue" })
+        .in("id", pendingIds);
+    }
+
+    return res.json(apps);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Recruiter: Update application status
+app.post("/api/applications/:id/status", verifyUser, async (req: any, res) => {
+  const { id } = req.params;
+  const { statut } = req.body; // 'acceptee' | 'refusee' | 'vue'
+
+  if (!["acceptee", "refusee", "vue"].includes(statut)) {
+    return res.status(400).json({ error: "Statut invalide." });
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    // Verify the applicant's offer belongs to the requesting recruiter
+    const { data: application } = await supabase
+      .from("job_applications")
+      .select("*, job_offer:job_offers(recruiter_id)")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!application) {
+      return res.status(404).json({ error: "Candidature introuvable." });
+    }
+
+    if (application.job_offer?.recruiter_id !== req.user.id) {
+      return res.status(403).json({ error: "Non autorisé à modifier cette candidature." });
+    }
+
+    const { data, error } = await supabase
+      .from("job_applications")
+      .update({ statut })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ==========================================
+// MODERATOR / ADMIN INTERFACES
+// ==========================================
+
+// Moderator/Admin: List recruiters for validation
+app.get("/api/moderator/recruiters", verifyModerator, async (req, res) => {
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("recruiter_profiles")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Moderator/Admin: Verify recruiter
+app.post("/api/moderator/recruiters/:id/verify", verifyModerator, async (req: any, res) => {
+  const { id } = req.params;
+  const { verification_status, verification_note } = req.body; // 'verified' | 'rejected'
+
+  if (!["verified", "rejected"].includes(verification_status)) {
+    return res.status(400).json({ error: "Statut de vérification invalide." });
+  }
+
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("recruiter_profiles")
+      .update({
+        verification_status,
+        verification_note: verification_note || null,
+        verified_at: verification_status === "verified" ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await logAdminAction(req.user.id, `Vérification recruteur : ${verification_status}`, "recruiter_profiles", id, { verification_note });
+
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Moderator/Admin: List offers for moderation
+app.get("/api/moderator/offers", verifyModerator, async (req, res) => {
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("job_offers")
+      .select("*, recruiter:recruiter_profiles(*)")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Moderator/Admin: Moderation of job offer
+app.post("/api/moderator/offers/:id/verify", verifyModerator, async (req: any, res) => {
+  const { id } = req.params;
+  const { moderation_status, moderation_note } = req.body; // 'approved' | 'rejected'
+
+  if (!["approved", "rejected"].includes(moderation_status)) {
+    return res.status(400).json({ error: "Statut de modération invalide." });
+  }
+
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("job_offers")
+      .update({
+        moderation_status,
+        moderation_note: moderation_note || null,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await logAdminAction(req.user.id, `Modération offre d'emploi : ${moderation_status}`, "job_offers", id, { moderation_note });
+
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Moderator/Admin: List reports
+app.get("/api/moderator/reports", verifyModerator, async (req, res) => {
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("job_offer_reports")
+      .select("*, job_offer:job_offers(*)")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Moderator/Admin: Resolve report
+app.post("/api/moderator/reports/:id/resolve", verifyModerator, async (req: any, res) => {
+  const { id } = req.params;
+  const { statut } = req.body; // 'resolved' | 'dismissed'
+
+  if (!["resolved", "dismissed"].includes(statut)) {
+    return res.status(400).json({ error: "Statut invalide." });
+  }
+
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("job_offer_reports")
+      .update({ statut })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await logAdminAction(req.user.id, `Résolution de signalement : ${statut}`, "job_offer_reports", id);
+
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ==========================================
+// ADMIN: ROLE MANAGEMENT & AUDIT LOGS
+// ==========================================
+
+// Admin: Invite user to a role
+app.post("/api/admin/invite", verifyAdmin, async (req: any, res) => {
+  const { email, role_invited } = req.body;
+
+  if (!email || !role_invited || !["recruiter", "moderator", "admin"].includes(role_invited)) {
+    return res.status(400).json({ error: "Email et rôle invité (recruiter|moderator|admin) requis." });
+  }
+
+  try {
+    const supabase = getSupabase();
+    const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+
+    const payload = {
+      email,
+      role_invited,
+      invited_by: req.user.id,
+      token,
+      status: "pending",
+      expires_at: expiresAt,
+      created_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+      .from("admin_invitations")
+      .insert([payload])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Send invitation email using Supabase Auth Admin API if user does not exist
+    try {
+      await supabase.auth.admin.inviteUserByEmail(email);
+    } catch (e: any) {
+      console.warn("Could not invite user via Supabase auth admin, user might already exist:", e.message);
+    }
+
+    await logAdminAction(req.user.id, `Création d'invitation pour : ${email}`, "admin_invitations", data.id, { role_invited });
+
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: List invitations
+app.get("/api/admin/invitations", verifyAdmin, async (req, res) => {
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("admin_invitations")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: Revoke invitation
+app.post("/api/admin/invitations/:id/revoke", verifyAdmin, async (req: any, res) => {
+  const { id } = req.params;
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("admin_invitations")
+      .update({ status: "revoked" })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await logAdminAction(req.user.id, `Révocation invitation`, "admin_invitations", id);
+
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: Audit actions log
+app.get("/api/admin/actions-log", verifyAdmin, async (req, res) => {
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("admin_actions_log")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: Get all profiles
+app.get("/api/admin/roles", verifyAdmin, async (req, res) => {
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .order("updated_at", { ascending: false });
+
+    if (error) throw error;
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin: Change user role
+app.post("/api/admin/roles/:id", verifyAdmin, async (req: any, res) => {
+  const { id } = req.params;
+  const { role } = req.body; // 'user' | 'recruiter' | 'moderator' | 'admin'
+
+  if (!["user", "recruiter", "moderator", "admin"].includes(role)) {
+    return res.status(400).json({ error: "Rôle invalide." });
+  }
+
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({ role, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await logAdminAction(req.user.id, `Mise à jour rôle : ${role}`, "profiles", id);
+
+    return res.json(data);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ==========================================
+// AI-POWERED JOB DESCRIPTION REFINE (NGROK / GEMINI)
+// ==========================================
+app.post("/api/job/generate-desc", verifyUser, async (req, res) => {
+  const { points_bruts, poste, entreprise } = req.body;
+
+  if (!points_bruts || !poste || !entreprise) {
+    return res.status(400).json({ error: "Les points bruts, le poste et l'entreprise sont requis." });
+  }
+
+  // Attempt external endpoint if configured
+  const extApiUrl = process.env.AI_JOB_GENERATION_API_URL;
+  if (extApiUrl) {
+    try {
+      console.log(`Forwarding AI job generation to external ngrok: ${extApiUrl}`);
+      const response = await fetch(extApiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ points_bruts, poste, entreprise })
+      });
+
+      if (response.ok) {
+        const body = await response.json();
+        return res.json({ titre: body.titre, description: body.description });
+      }
+      console.warn("External AI job API returned error code:", response.status);
+    } catch (err) {
+      console.warn("Could not connect to external AI job API, falling back to local Gemini:", err);
+    }
+  }
+
+  // Fallback: Gemini 3.5 Flash direct call
+  try {
+    const ai = getGoogleGenAI();
+    const prompt = `Tu es un rédacteur d'offres d'emploi exceptionnel pour le marché Africain.
+Génère une offre d'emploi attrayante, bien structurée en français pour le poste de "${poste}" chez "${entreprise}".
+
+Points clés bruts fournis :
+${points_bruts}
+
+Consignes :
+1. Rédige un titre professionnel clair et accrocheur.
+2. Structure la description avec une introduction sur l'entreprise, les responsabilités principales, le profil recherché et les compétences.
+3. Utilise une mise en page Markdown propre avec des puces.
+4. Réponds exclusivement avec un objet JSON structuré comme suit :
+{
+  "titre": "Le titre de l'offre d'emploi généré",
+  "description": "La description complète rédigée au format Markdown"
+}
+Ne mets aucun commentaire, aucune balise de code markdown de type \`\`\`json, retourne UNIQUEMENT le JSON pur valide.`;
+
+    const aiResponse = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+    });
+
+    let rawText = aiResponse.text?.trim() || "";
+    // strip markdown wrappers if AI didn't follow the instructions
+    if (rawText.startsWith("```json")) {
+      rawText = rawText.replace(/^```json/, "").replace(/```$/, "").trim();
+    } else if (rawText.startsWith("```")) {
+      rawText = rawText.replace(/^```/, "").replace(/```$/, "").trim();
+    }
+
+    const result = JSON.parse(rawText);
+    return res.json({ titre: result.titre, description: result.description });
+  } catch (err: any) {
+    console.error("Gemini description generation error:", err);
+    return res.status(500).json({ error: "Échec de l'assistance de rédaction par l'IA : " + err.message });
+  }
+});
+
+
+// ==========================================
+// CV PROFESSIONAL SUMMARY (GEMINI)
+// ==========================================
+app.post("/api/cv/generate-summary", verifyUser, async (req: any, res) => {
   const { data } = req.body;
 
   if (!data) {
@@ -720,12 +1134,6 @@ app.post("/api/cv/generate-summary", async (req, res) => {
   }
 
   try {
-    const supabase = getSupabase();
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
-    if (authErr || !user) {
-      return res.status(401).json({ error: "Session expirée ou invalide. Veuillez vous reconnecter." });
-    }
-
     const { nom, titre, competences, experiences, formation } = data;
     
     const prompt = `Tu es un expert en recrutement et en rédaction de CV professionnels de haut niveau pour le marché de l'emploi technologique en Afrique.
@@ -767,6 +1175,177 @@ Directives strictes :
 });
 
 
+// ==========================================
+// MONEYFUSION MOBILE MONEY BOOST SYSTEM
+// ==========================================
+
+// Create Boost Payment Request
+app.post("/api/boost/create", verifyUser, async (req: any, res) => {
+  const { target_type, target_id, numeroSend, nomclient, montant } = req.body;
+
+  if (!target_type || !target_id || !numeroSend || !nomclient || !montant) {
+    return res.status(400).json({ error: "Tous les champs de paiement (cible, téléphone, nom, montant) sont requis." });
+  }
+
+  const mfUrl = process.env.MONEYFUSION_API_URL;
+  if (!mfUrl) {
+    return res.status(501).json({ error: "Service de paiement MoneyFusion non configuré." });
+  }
+
+  try {
+    const supabase = getSupabase();
+    
+    // Check if there is already an active boost for this target
+    const { data: existingBoost } = await supabase
+      .from("boosts")
+      .select("id")
+      .eq("target_type", target_type)
+      .eq("target_id", target_id)
+      .eq("statut", "paid")
+      .gt("expires_at", new Date().toISOString())
+      .maybeSingle();
+
+    if (existingBoost) {
+      return res.status(400).json({ error: "Ce contenu possède déjà un Boost actif." });
+    }
+
+    // Insert pending boost transaction record
+    const tokenPay = "BOOST-" + Math.random().toString(36).substring(2, 12).toUpperCase();
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // Default 7 days
+
+    const { error: insertErr } = await supabase.from("boosts").insert([{
+      user_id: req.user.id,
+      target_type,
+      target_id,
+      token_pay: tokenPay,
+      statut: "pending",
+      montant: Number(montant),
+      duree_jours: 7,
+      expires_at: expiresAt,
+      created_at: new Date().toISOString()
+    }]);
+
+    if (insertErr) throw insertErr;
+
+    // Call external MoneyFusion payment API
+    const webhookUrl = `${process.env.SITE_URL || process.env.APP_URL || "https://ebookstore-73b.pages.dev"}/api/webhook/moneyfusion`;
+    const callbackUrl = `${process.env.SITE_URL || process.env.APP_URL || "https://ebookstore-73b.pages.dev"}/?boost=success`;
+
+    const payload = {
+      totalPrice: Number(montant),
+      article: [{ "Boost 7 jours": Number(montant) }],
+      personal_Info: [{ userId: req.user.id, boostId: target_id, targetType: target_type }],
+      numeroSend,
+      nomclient,
+      return_url: callbackUrl,
+      webhook_url: webhookUrl
+    };
+
+    console.log("Sending boost request to MoneyFusion API:", mfUrl);
+
+    const mfResponse = await fetch(mfUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!mfResponse.ok) {
+      const errText = await mfResponse.text();
+      return res.status(502).json({ error: "Échec de la communication avec MoneyFusion : " + errText });
+    }
+
+    const body = await mfResponse.json();
+    return res.json({
+      statut: true,
+      token: tokenPay,
+      url: body.url || callbackUrl // return payment redirection url
+    });
+  } catch (err: any) {
+    console.error("Boost creation failed:", err);
+    return res.status(500).json({ error: "Échec de l'initialisation du Boost : " + err.message });
+  }
+});
+
+// MoneyFusion Webhook Notification
+app.post("/api/webhook/moneyfusion", async (req, res) => {
+  const { event, personal_Info, tokenPay, Montant } = req.body;
+
+  console.log("MoneyFusion webhook received payload:", JSON.stringify(req.body));
+
+  if (!tokenPay) {
+    return res.status(400).json({ error: "tokenPay manquant" });
+  }
+
+  try {
+    const supabase = getSupabase();
+
+    // Check if this transaction is already processed to avoid duplicates
+    const { data: existingBoost } = await supabase
+      .from("boosts")
+      .select("statut, target_type, target_id, user_id, duree_jours")
+      .eq("token_pay", tokenPay)
+      .maybeSingle();
+
+    if (!existingBoost) {
+      console.warn("Webhook transaction tokenPay not found in local boosts log:", tokenPay);
+      return res.status(404).json({ error: "Boost transaction not found." });
+    }
+
+    // Ignore if already paid or failed
+    if (existingBoost.statut === "paid") {
+      console.log("Transaction already processed. Ignoring notification duplicate.");
+      return res.json({ status: "ignored_duplicate" });
+    }
+
+    const { target_type, target_id, user_id, duree_jours } = existingBoost;
+
+    if (event === "payin.session.completed") {
+      // 1. Update boost record to paid
+      await supabase
+        .from("boosts")
+        .update({ statut: "paid" })
+        .eq("token_pay", tokenPay);
+
+      // 2. Set boosted flags on targeted item
+      const expiryDate = new Date(Date.now() + (duree_jours || 7) * 24 * 60 * 60 * 1000).toISOString();
+      let updateTable = "";
+      if (target_type === "cv") updateTable = "cvs";
+      else if (target_type === "bio") updateTable = "bios";
+      else if (target_type === "job_offer") updateTable = "job_offers";
+
+      if (updateTable) {
+        const { error: boostErr } = await supabase
+          .from(updateTable)
+          .update({
+            is_boosted: true,
+            boosted_until: expiryDate
+          })
+          .eq("id", target_id);
+
+        if (boostErr) {
+          console.error(`Failed to apply boosted flag on ${updateTable}:`, boostErr.message);
+        } else {
+          console.log(`Successfully activated Boost on ${updateTable} ID ${target_id} until ${expiryDate}`);
+        }
+      }
+
+      await logAdminAction(user_id, `Activation Boost payé`, target_type, target_id, { tokenPay, Montant });
+    } else if (event === "payin.session.cancelled") {
+      await supabase
+        .from("boosts")
+        .update({ statut: "failed" })
+        .eq("token_pay", tokenPay);
+    }
+
+    return res.json({ status: "success" });
+  } catch (err: any) {
+    console.error("Webhook processing failed:", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 
 // ==========================================
 // VITE AND STATIC ASSETS HANDLERS
@@ -793,7 +1372,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server started. Listening on http://0.0.0.0:${PORT}`);
+    console.log(`Recruitment Server started. Listening on http://0.0.0.0:${PORT}`);
   });
 }
 
