@@ -984,9 +984,9 @@ export default function AdminPanel({ currentUser, userRole }: AdminPanelProps) {
                   </div>
 
                   <div className="p-5 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
-                    <span className="font-semibold text-slate-400 uppercase">AI Job Generator API</span>
+                    <span className="font-semibold text-slate-400 uppercase">Service d'Intelligence Artificielle</span>
                     <p className="text-sm font-bold text-slate-800 dark:text-white mt-1 break-all">
-                      {diagStatus.aiJobUrl || "Local Gemini Fallback"}
+                      {diagStatus.aiStatus || diagStatus.aiJobUrl || "Non configuré"}
                     </p>
                   </div>
 

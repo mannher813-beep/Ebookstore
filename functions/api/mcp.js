@@ -1236,6 +1236,63 @@ export async function onRequest(context) {
                 }
 
                 if (!success) {
+                  const groqKey = env.GROQ_API_KEY;
+                  if (groqKey) {
+                    try {
+                      const prompt = `Tu es un rédacteur d'offres d'emploi exceptionnel pour le marché Africain.
+Génère une offre d'emploi attrayante, bien structurée en français pour le poste de "${poste}" chez "${entreprise}".
+
+Points clés bruts fournis :
+${points_bruts}
+
+Consignes :
+1. Rédige un titre professionnel clair et accrocheur.
+2. Structure la description avec une introduction sur l'entreprise, les responsabilités principales, le profil recherché et les compétences.
+3. Utilise une mise en page Markdown propre avec des puces.
+4. Réponds exclusivement avec un objet JSON structuré comme suit :
+{
+  "titre": "Le titre de l'offre d'emploi généré",
+  "description": "La description complète rédigée au format Markdown"
+}
+Ne mets aucun commentaire, aucune balise de code markdown de type \`\`\`json, retourne UNIQUEMENT le JSON pur valide.`;
+
+                      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                          "Authorization": `Bearer ${groqKey}`
+                        },
+                        body: JSON.stringify({
+                          model: "llama-3.3-70b-versatile",
+                          messages: [
+                            {
+                              role: "user",
+                              content: prompt
+                            }
+                          ],
+                          temperature: 0.5,
+                          response_format: { type: "json_object" }
+                        })
+                      });
+
+                      if (response.ok) {
+                        const data = await response.json();
+                        const text = data.choices?.[0]?.message?.content?.trim();
+                        if (text) {
+                          const cleanText = text.trim().replace(/^```json/, "").replace(/```$/, "").trim();
+                          const parsed = JSON.parse(cleanText);
+                          finalTitre = parsed.titre;
+                          finalDesc = parsed.description;
+                          success = true;
+                        }
+                      }
+                    } catch (err) {
+                      console.error("Groq fallback inside MCP failed:", err);
+                    }
+                  }
+                }
+
+                if (!success) {
                   const geminiKey = env.GEMINI_API_KEY;
                   if (geminiKey) {
                     try {

@@ -29,6 +29,58 @@ function getGoogleGenAI(): GoogleGenAI {
   return aiClient;
 }
 
+async function generateAIContent(prompt: string, isJson: boolean = false): Promise<string> {
+  const groqKey = process.env.GROQ_API_KEY;
+  if (groqKey) {
+    try {
+      console.log("Using Groq API for content generation");
+      const body: any = {
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        temperature: 0.5
+      };
+      if (isJson) {
+        body.response_format = { type: "json_object" };
+      }
+      
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${groqKey}`
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Groq API returned error status ${res.status}: ${errText}`);
+      }
+
+      const data: any = await res.json();
+      const content = data.choices?.[0]?.message?.content?.trim();
+      if (content) {
+        return content;
+      }
+    } catch (err: any) {
+      console.error("Groq generation failed, attempting Gemini fallback if available:", err.message);
+    }
+  }
+
+  // Fallback to Gemini
+  const ai = getGoogleGenAI();
+  const aiResponse = await ai.models.generateContent({
+    model: "gemini-3.5-flash",
+    contents: prompt,
+  });
+  return aiResponse.text?.trim() || "";
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -192,6 +244,7 @@ app.get("/api/config-status", async (req, res) => {
 
   let supabaseStatus = "Non connecté";
   let moneyfusionStatus = "Non configuré";
+  let aiStatus = "Non configuré";
 
   if (supabaseUrl && supabaseServiceKey) {
     try {
@@ -211,11 +264,18 @@ app.get("/api/config-status", async (req, res) => {
     moneyfusionStatus = `${moneyfusionUrl} (Configuré)`;
   }
 
+  if (process.env.GROQ_API_KEY) {
+    aiStatus = "Groq Actif (llama-3.3-70b-versatile)";
+  } else if (process.env.GEMINI_API_KEY) {
+    aiStatus = "Gemini Actif (gemini-3.5-flash)";
+  }
+
   res.json({
     supabaseUrl,
     supabaseStatus,
     moneyfusionStatus,
     aiJobUrl,
+    aiStatus,
     isRealProduction: supabaseStatus.includes("Connecté") && !!moneyfusionUrl
   });
 });
@@ -1077,13 +1137,12 @@ app.post("/api/job/generate-desc", verifyUser, async (req, res) => {
       }
       console.warn("External AI job API returned error code:", response.status);
     } catch (err) {
-      console.warn("Could not connect to external AI job API, falling back to local Gemini:", err);
+      console.warn("Could not connect to external AI job API, falling back to AI helper:", err);
     }
   }
 
-  // Fallback: Gemini 3.5 Flash direct call
+  // Use the clean AI content generator (Groq with Gemini fallback)
   try {
-    const ai = getGoogleGenAI();
     const prompt = `Tu es un rédacteur d'offres d'emploi exceptionnel pour le marché Africain.
 Génère une offre d'emploi attrayante, bien structurée en français pour le poste de "${poste}" chez "${entreprise}".
 
@@ -1101,12 +1160,9 @@ Consignes :
 }
 Ne mets aucun commentaire, aucune balise de code markdown de type \`\`\`json, retourne UNIQUEMENT le JSON pur valide.`;
 
-    const aiResponse = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-    });
+    const aiResponseText = await generateAIContent(prompt, true);
 
-    let rawText = aiResponse.text?.trim() || "";
+    let rawText = aiResponseText.trim() || "";
     // strip markdown wrappers if AI didn't follow the instructions
     if (rawText.startsWith("```json")) {
       rawText = rawText.replace(/^```json/, "").replace(/```$/, "").trim();
@@ -1117,7 +1173,7 @@ Ne mets aucun commentaire, aucune balise de code markdown de type \`\`\`json, re
     const result = JSON.parse(rawText);
     return res.json({ titre: result.titre, description: result.description });
   } catch (err: any) {
-    console.error("Gemini description generation error:", err);
+    console.error("AI description generation error:", err);
     return res.status(500).json({ error: "Échec de l'assistance de rédaction par l'IA : " + err.message });
   }
 });
@@ -1160,16 +1216,10 @@ Directives strictes :
 5. Ne mets aucun titre, aucune introduction (comme "Voici le résumé :"), aucun commentaire ou métadonnée. Donne UNIQUEMENT le texte final rédigé.
 `;
 
-    const ai = getGoogleGenAI();
-    const aiResponse = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-    });
-
-    const summary = aiResponse.text?.trim() || "";
+    const summary = await generateAIContent(prompt, false);
     return res.json({ summary });
   } catch (err: any) {
-    console.error("Gemini summary generation error:", err);
+    console.error("AI summary generation error:", err);
     return res.status(500).json({ error: "Échec de la génération du résumé par l'IA : " + err.message });
   }
 });
