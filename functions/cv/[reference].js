@@ -21,8 +21,8 @@ export async function onRequest(context) {
   }
 
   // 2. Initialize default meta values
-  let titreProfil = "Profil Professionnel | EbookStore Afrique";
-  let descriptionProfil = "Consultez ce profil professionnel et CV en ligne sur EbookStore Afrique.";
+  let titreProfil = "Profil Professionnel | EbookStore Recrutement";
+  let descriptionProfil = "Consultez ce profil professionnel et CV en ligne sur EbookStore Recrutement.";
   let photoProfil = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=150";
   let nomCandidat = "Professionnel";
   let titreCandidat = "Développeur";
@@ -57,16 +57,16 @@ export async function onRequest(context) {
               nomCandidat = parsedData.nom || nomCandidat;
               titreCandidat = parsedData.titre || titreCandidat;
               photoProfil = parsedData.photo || photoProfil;
-              titreProfil = `CV de ${nomCandidat} - ${titreCandidat} | EbookStore Afrique`;
-              descriptionProfil = cv.summary || `Découvrez le parcours professionnel, les compétences et les expériences de ${nomCandidat} (${titreCandidat}) sur EbookStore Afrique.`;
+              titreProfil = `CV de ${nomCandidat} - ${titreCandidat} | EbookStore Recrutement`;
+              descriptionProfil = cv.summary || `Découvrez le parcours professionnel, les compétences et les expériences de ${nomCandidat} (${titreCandidat}) sur EbookStore Recrutement.`;
               hasData = true;
             }
           } else {
-            titreProfil = "Profil Privé | EbookStore Afrique";
+            titreProfil = "Profil Privé | EbookStore Recrutement";
             descriptionProfil = "Ce profil professionnel est confidentiel et son accès public est restreint par l'auteur.";
           }
         } else {
-          titreProfil = "Profil Introuvable | EbookStore Afrique";
+          titreProfil = "Profil Introuvable | EbookStore Recrutement";
           descriptionProfil = "Le Curriculum Vitae demandé n'existe pas ou a été supprimé.";
         }
       }
@@ -194,7 +194,7 @@ export async function onRequest(context) {
       </ul>
 
       <p>
-        Ce CV est hébergé publiquement sur EbookStore Afrique. Pour consulter la version interactive, visitez :
+        Ce CV est hébergé publiquement sur EbookStore Recrutement. Pour consulter la version interactive, visitez :
         <a href="https://ebookstore-73b.pages.dev/cv/${reference}">https://ebookstore-73b.pages.dev/cv/${reference}</a>
       </p>
 

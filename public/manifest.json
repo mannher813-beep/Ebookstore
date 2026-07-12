@@ -1,7 +1,7 @@
 {
-  "name": "EbookStore Afrique",
-  "short_name": "EbookStore",
-  "description": "Les meilleurs ebooks de développement pour propulser votre carrière en Afrique.",
+  "name": "EbookStore Recrutement",
+  "short_name": "Recrutement",
+  "description": "La plateforme de recrutement et de mise en relation de talents en Afrique.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait-primary",

@@ -318,7 +318,7 @@ export default function DashboardView({
                 <h4 className="font-display font-black text-base text-slate-800">Connecteur CV & Portfolio</h4>
               </div>
               <p className="text-xs text-slate-600 max-w-xl leading-relaxed">
-                Connectez votre espace EbookStore avec vos portfolios personnels ou d'autres plateformes de recrutement en ajoutant notre script connecteur à votre site web.
+                Connectez votre espace EbookStore Recrutement avec vos portfolios personnels ou d'autres plateformes de recrutement en ajoutant notre script connecteur à votre site web.
               </p>
             </div>
             <button

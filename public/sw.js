@@ -1,5 +1,5 @@
-// Service Worker for EbookStore Afrique
-const CACHE_NAME = "ebookstore-v1";
+// Service Worker for EbookStore Recrutement
+const CACHE_NAME = "recrutement-v1";
 const ASSETS_TO_CACHE = [
   "/",
   "/index.html",
@@ -56,8 +56,8 @@ self.addEventListener("fetch", (event) => {
           if (cachedResponse) {
             return cachedResponse;
           }
-          // If accessing an ebook detail view, serve index.html for SPA support
-          if (event.request.url.includes("/ebook/")) {
+          // If accessing a job detail view, serve index.html for SPA support
+          if (event.request.url.includes("/job/")) {
             return caches.match("/index.html") || caches.match("/");
           }
         });
@@ -73,11 +73,11 @@ self.addEventListener("push", (event) => {
     const data = event.data.json();
     console.log("[Service Worker] Push notification received:", data);
 
-    const title = data.title || data.titre || "Nouvel Ebook Disponible !";
-    const body = data.body || data.description || "Un nouvel ebook vient d'être publié sur EbookStore !";
-    const image = data.image || data.url_couverture || "/icon.svg";
-    const ebookId = data.ebook_id || data.id || null;
-    const url = data.url || (ebookId ? `/ebook/${ebookId}` : "/");
+    const title = data.title || data.titre || "Nouvelle Offre d'Emploi !";
+    const body = data.body || data.description || "Une nouvelle opportunité d'emploi vient d'être publiée !";
+    const image = data.image || "/icon.svg";
+    const slug = data.slug || null;
+    const url = data.url || (slug ? `/job/${slug}` : "/");
 
     const options = {
       body: body,
@@ -96,7 +96,7 @@ self.addEventListener("push", (event) => {
     // Fallback simple text notification
     const text = event.data.text();
     event.waitUntil(
-      self.registration.showNotification("EbookStore Afrique", {
+      self.registration.showNotification("EbookStore Recrutement", {
         body: text,
         icon: "/icon.svg",
         badge: "/icon.svg",

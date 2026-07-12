@@ -16,14 +16,14 @@ export async function onRequest(context) {
     return new Response("Error loading index.html: " + err.message, { status: 500 });
   }
 
-  // 2. Fetch all ebooks from Supabase REST API
+  // 2. Fetch all job offers from Supabase REST API
   const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
   const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY;
-  let ebooks = [];
+  let jobOffers = [];
 
   if (supabaseUrl && supabaseAnonKey) {
     try {
-      const dbUrl = `${supabaseUrl}/rest/v1/ebooks?select=id,titre,description,prix,categorie,url_couverture,created_at&order=created_at.desc`;
+      const dbUrl = `${supabaseUrl}/rest/v1/job_offers?statut=eq.active&moderation_status=eq.approved&select=id,titre,slug,description,entreprise,lieu,type_contrat,salaire_min,salaire_max,devise,created_at&order=created_at.desc`;
       const dbResponse = await fetch(dbUrl, {
         method: "GET",
         headers: {
@@ -34,10 +34,10 @@ export async function onRequest(context) {
       });
 
       if (dbResponse.ok) {
-        ebooks = await dbResponse.json();
+        jobOffers = await dbResponse.json();
       }
     } catch (err) {
-      console.error("Failed to fetch ebooks for home partial SSR:", err);
+      console.error("Failed to fetch job offers for home partial SSR:", err);
     }
   }
 
@@ -60,13 +60,13 @@ export async function onRequest(context) {
         "@type": "WebSite",
         "@id": "https://ebookstore-73b.pages.dev/#website",
         "url": "https://ebookstore-73b.pages.dev/",
-        "name": "EbookStore Afrique",
-        "description": "Les Meilleurs Ebooks de Développement Professionnel et No-Code en Afrique"
+        "name": "EbookStore Recrutement",
+        "description": "Plateforme d'excellence pour le recrutement de talents technologiques en Afrique"
       },
       {
         "@type": "Organization",
         "@id": "https://ebookstore-73b.pages.dev/#organization",
-        "name": "EbookStore Afrique",
+        "name": "EbookStore Recrutement",
         "url": "https://ebookstore-73b.pages.dev/",
         "logo": "https://ebookstore-73b.pages.dev/icon.svg",
         "sameAs": []
@@ -74,18 +74,18 @@ export async function onRequest(context) {
     ]
   };
 
-  if (ebooks.length > 0) {
+  if (jobOffers.length > 0) {
     structuredData["@graph"].push({
       "@type": "ItemList",
       "@id": "https://ebookstore-73b.pages.dev/#catalog",
-      "name": "Notre catalogue complet d'ebooks",
-      "numberOfItems": ebooks.length,
-      "itemListElement": ebooks.map((book, index) => ({
+      "name": "Nos offres d'emploi actives",
+      "numberOfItems": jobOffers.length,
+      "itemListElement": jobOffers.map((job, index) => ({
         "@type": "ListItem",
         "position": index + 1,
-        "url": `https://ebookstore-73b.pages.dev/ebook/${book.id}`,
-        "name": book.titre,
-        "description": book.description
+        "url": `https://ebookstore-73b.pages.dev/job/${job.slug}`,
+        "name": job.titre,
+        "description": job.description
       }))
     });
   }
@@ -96,29 +96,26 @@ export async function onRequest(context) {
   let partialSsrHtml = `
   <!-- Partial SSR Content for Robots and AI crawlers (Visually Hidden) -->
   <div class="sr-only" aria-hidden="true" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;">
-    <h1>EbookStore Afrique - Les Meilleurs Ebooks de Développement en Afrique</h1>
-    <p>Découvrez notre plateforme d'excellence pour acquérir de nouvelles compétences technologiques en Afrique. Achetez vos ebooks et formations PDF via Orange Money, MTN MoMo, Wave, etc., et téléchargez-les instantanément de manière sécurisée.</p>
+    <h1>EbookStore Recrutement - Plateforme de Recrutement de Talents Technologiques en Afrique</h1>
+    <p>Découvrez notre plateforme d'excellence pour recruter des experts tech qualifiés ou propulser votre carrière en Afrique francophone.</p>
     
-    <h2>Notre Catalogue complet d'Ebooks</h2>
+    <h2>Nos Offres d'Emploi Actives</h2>
     <ul>
   `;
 
-  for (const book of ebooks) {
-    const formattedPrice = book.prix === 0 ? "GRATUIT" : `${book.prix.toLocaleString()} FCFA`;
-    const downloadUrl = `https://ebookstore-73b.pages.dev/api/download/${book.id}`;
+  for (const job of jobOffers) {
+    const formattedSalary = (job.salaire_min && job.salaire_max) 
+      ? `${job.salaire_min.toLocaleString()} - ${job.salaire_max.toLocaleString()} ${job.devise}` 
+      : "Non spécifié";
     partialSsrHtml += `
       <li>
         <article>
-          <h3><a href="/ebook/${book.id}">${escapeHtml(book.titre)}</a></h3>
-          <p><strong>Catégorie :</strong> ${escapeHtml(book.categorie)}</p>
-          <p><strong>Prix :</strong> ${formattedPrice}</p>
-          <p><strong>Description :</strong> ${escapeHtml(book.description)}</p>
-          ${book.prix === 0 ? `
-            <p><strong>Téléchargement Direct (Gratuit) :</strong> <a href="${downloadUrl}" target="_blank" rel="noopener noreferrer">${downloadUrl}</a></p>
-          ` : `
-            <p><strong>Lien de Téléchargement Sécurisé :</strong> <a href="${downloadUrl}" target="_blank" rel="noopener noreferrer">${downloadUrl}</a></p>
-          `}
-          <img src="${escapeHtml(book.url_couverture)}" alt="${escapeHtml(book.titre)}" width="400" height="300" />
+          <h3><a href="/job/${job.slug}">${escapeHtml(job.titre)}</a></h3>
+          <p><strong>Entreprise :</strong> ${escapeHtml(job.entreprise)}</p>
+          <p><strong>Lieu :</strong> ${escapeHtml(job.lieu)}</p>
+          <p><strong>Type de contrat :</strong> ${escapeHtml(job.type_contrat)}</p>
+          <p><strong>Salaire :</strong> ${formattedSalary}</p>
+          <p><strong>Description :</strong> ${escapeHtml(job.description)}</p>
         </article>
       </li>
     `;
@@ -127,18 +124,18 @@ export async function onRequest(context) {
   partialSsrHtml += `
     </ul>
     
-    <h2>Comment acheter ?</h2>
-    <p>Sélectionnez un livre de notre catalogue, cliquez sur Acheter, entrez votre numéro Mobile Money (MTN, Orange, Wave) et validez la transaction. Votre lien de téléchargement unique et sécurisé sera disponible immédiatement.</p>
+    <h2>Comment recruter ?</h2>
+    <p>Inscrivez-vous en tant que recruteur, décrivez votre poste à pourvoir à l'aide de notre assistant IA et publiez votre offre. Vous pouvez également consulter directement notre répertoire public de candidats certifiés.</p>
     
-    <h2>Programme d'Affiliation</h2>
-    <p>Rejoignez notre communauté et commencez à gagner de l'argent. Générez des liens de parrainage pour nos ebooks et percevez des commissions sur chaque vente réalisée grâce à vous.</p>
+    <h2>Espace Candidat</h2>
+    <p>Créez votre profil candidat, rédigez votre biographie professionnelle, générez votre CV au format PDF et postulez instantanément aux meilleures offres de la région.</p>
   </div>
   `;
 
   // 5. Inject meta tags and structured data into <head>
   const headInjections = `
   <link rel="canonical" href="https://ebookstore-73b.pages.dev/" />
-  <meta name="description" content="EbookStore Afrique - Achetez et téléchargez les meilleurs ebooks et guides de programmation, design et no-code en Afrique. Paiement sécurisé par Mobile Money." />
+  <meta name="description" content="EbookStore Recrutement - Recrutez des talents technologiques qualifiés ou postulez à des offres d'emploi exclusives en Afrique francophone." />
   <script type="application/ld+json">
 ${jsonLdString}
   </script>

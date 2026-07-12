@@ -62,7 +62,7 @@ export default function AuthModal({ onClose }: AuthModalProps) {
                 Authentification unique
               </h3>
               <p className="text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
-                Connectez-vous instantanément avec votre compte Google pour accéder à vos achats et télécharger vos ebooks en toute sécurité.
+                Connectez-vous instantanément avec votre compte Google pour gérer votre profil candidat, générer votre biographie par IA ou publier vos offres d'emploi en toute sécurité.
               </p>
             </div>
           </div>

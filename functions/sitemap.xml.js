@@ -4,12 +4,12 @@ export async function onRequest(context) {
   const supabaseUrl = env.VITE_SUPABASE_URL;
   const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY;
 
-  let ebooks = [];
+  let jobs = [];
   let cvs = [];
   let bios = [];
   if (supabaseUrl && supabaseAnonKey) {
     try {
-      const dbUrl = `${supabaseUrl}/rest/v1/ebooks?select=id,created_at&order=created_at.desc`;
+      const dbUrl = `${supabaseUrl}/rest/v1/job_offers?statut=eq.active&moderation_status=eq.approved&select=slug,created_at&order=created_at.desc`;
       const response = await fetch(dbUrl, {
         method: "GET",
         headers: {
@@ -20,10 +20,10 @@ export async function onRequest(context) {
       });
 
       if (response.ok) {
-        ebooks = await response.json();
+        jobs = await response.json();
       }
     } catch (err) {
-      console.error("Failed to fetch ebooks for sitemap:", err);
+      console.error("Failed to fetch jobs for sitemap:", err);
     }
 
     try {
@@ -77,16 +77,16 @@ export async function onRequest(context) {
   </url>
 `;
 
-  // Dynamic Ebook Detail pages
-  for (const ebook of ebooks) {
-    if (ebook.id) {
-      const lastmod = ebook.created_at ? ebook.created_at.split("T")[0] : currentDate;
+  // Dynamic Job Offer Detail pages
+  for (const job of jobs) {
+    if (job.slug) {
+      const lastmod = job.created_at ? job.created_at.split("T")[0] : currentDate;
       xml += `  <url>
-    <loc>https://ebookstore-73b.pages.dev/ebook/${ebook.id}</loc>
+    <loc>https://ebookstore-73b.pages.dev/job/${job.slug}</loc>
     <lastmod>${lastmod}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
-  </url>
+    </url>
 `;
     }
   }

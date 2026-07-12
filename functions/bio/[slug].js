@@ -18,8 +18,8 @@ export async function onRequest(context) {
   }
 
   // 2. Initialize default meta values
-  let titreBio = "Biographie Professionnelle | EbookStore Afrique";
-  let descriptionBio = "Consultez cette biographie professionnelle en ligne sur EbookStore Afrique.";
+  let titreBio = "Biographie Professionnelle | EbookStore Recrutement";
+  let descriptionBio = "Consultez cette biographie professionnelle en ligne sur EbookStore Recrutement.";
   let hasData = false;
   let bioData = null;
 
@@ -52,7 +52,7 @@ export async function onRequest(context) {
               .map(word => word.charAt(0).toUpperCase() + word.slice(1))
               .join(" ");
 
-            titreBio = `Biographie de ${formattedName} | EbookStore Afrique`;
+            titreBio = `Biographie de ${formattedName} | EbookStore Recrutement`;
             // Strip markdown for a clean description snippet
             let cleanText = bio.content || "";
             cleanText = cleanText
@@ -63,11 +63,11 @@ export async function onRequest(context) {
             descriptionBio = cleanText.substring(0, 160) || descriptionBio;
             hasData = true;
           } else {
-            titreBio = "Biographie Confidentielle | EbookStore Afrique";
+            titreBio = "Biographie Confidentielle | EbookStore Recrutement";
             descriptionBio = "Cette biographie professionnelle est confidentielle et son partage public est désactivé.";
           }
         } else {
-          titreBio = "Biographie Introuvable | EbookStore Afrique";
+          titreBio = "Biographie Introuvable | EbookStore Recrutement";
           descriptionBio = "La biographie professionnelle demandée n'existe pas ou a été déplacée.";
         }
       }
@@ -165,7 +165,7 @@ export async function onRequest(context) {
       </div>
 
       <p>
-        Cette biographie est publiée et partagée publiquement sur EbookStore Afrique. Pour lire la version originale, visitez :
+        Cette biographie est publiée et partagée publiquement sur EbookStore Recrutement. Pour lire la version originale, visitez :
         <a href="https://ebookstore-73b.pages.dev/bio/${slug}">https://ebookstore-73b.pages.dev/bio/${slug}</a>
       </p>
     </div>

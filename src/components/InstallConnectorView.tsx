@@ -151,10 +151,10 @@ export default function InstallConnectorView({
   style="border: 2px solid #e2e8f0; border-radius: 16px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05);"
 ></iframe>`;
 
-  const widgetSnippet = `<!-- EbookStore Widget Mount point -->
-<div id="ebookstore-cv-widget" data-ref="${userRef}"></div>
+  const widgetSnippet = `<!-- EbookStore Recrutement Widget Mount point -->
+<div id="recrutement-cv-widget" data-ref="${userRef}"></div>
 
-<!-- EbookStore Widget Script -->
+<!-- EbookStore Recrutement Widget Script -->
 <script>
   (function() {
     var ref = "${userRef}";
@@ -164,7 +164,7 @@ export default function InstallConnectorView({
     iframe.style.height = "750px";
     iframe.style.border = "none";
     iframe.style.borderRadius = "16px";
-    document.getElementById("ebookstore-cv-widget").appendChild(iframe);
+    document.getElementById("recrutement-cv-widget").appendChild(iframe);
   })();
 </script>`;
 
@@ -395,7 +395,7 @@ export default function InstallConnectorView({
                 <ol className="list-decimal pl-4 space-y-1">
                   <li>Allez dans vos paramètres Claude.ai</li>
                   <li>Cliquez sur l'onglet <span className="font-semibold text-slate-700">Developer</span> puis <span className="font-semibold text-slate-700">MCP</span></li>
-                  <li>Ajoutez un nouveau serveur avec le nom <span className="font-semibold text-slate-700">EbookStore Afrique</span>, le type <span className="font-semibold text-slate-700">SSE</span>, et l'URL ci-dessus.</li>
+                  <li>Ajoutez un nouveau serveur avec le nom <span className="font-semibold text-slate-700">EbookStore Recrutement</span>, le type <span className="font-semibold text-slate-700">SSE</span>, et l'URL ci-dessus.</li>
                 </ol>
               </div>
 

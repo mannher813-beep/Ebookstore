@@ -15,10 +15,10 @@ export default function MentionsLegales({ setView }: LegalPageProps) {
     <div className="max-w-4xl mx-auto px-4 py-8 sm:py-12 space-y-8 font-sans" id="mentions-legales-page">
       {/* Back button */}
       <button
-        onClick={() => setView("catalog")}
+        onClick={() => setView("home")}
         className="inline-flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
       >
-        <ArrowLeft className="h-4 w-4" /> Retourner au catalogue
+        <ArrowLeft className="h-4 w-4" /> Retourner à l'accueil
       </button>
 
       {/* Header card */}
@@ -31,10 +31,10 @@ export default function MentionsLegales({ setView }: LegalPageProps) {
         </h2>
         <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
           <Calendar className="h-3.5 w-3.5" />
-          <span>Dernière mise à jour : 9 Juillet 2026</span>
+          <span>Dernière mise à jour : 11 Juillet 2026</span>
         </div>
         <p className="text-xs sm:text-sm text-slate-500 leading-relaxed pt-2">
-          Conformément aux réglementations relatives à la confiance dans l'économie numérique et à l'édition de services en ligne, vous trouverez ci-dessous les informations légales d'identification d'<strong>EbookStore Afrique</strong>. Certains champs non encore spécifiés officiellement par l'exploitant sont marqués d'un badge éditable.
+          Conformément aux réglementations relatives à la confiance dans l'économie numérique et à l'édition de services en ligne, vous trouverez ci-dessous les informations légales d'identification de la plateforme <strong>EbookStore Recrutement</strong>. Certains champs non encore spécifiés officiellement par l'exploitant sont marqués d'un badge éditable.
         </p>
       </div>
 
@@ -47,7 +47,7 @@ export default function MentionsLegales({ setView }: LegalPageProps) {
             <span className="text-indigo-600 font-mono font-bold">1.</span> Éditeur & Exploitation du Service
           </h3>
           <p>
-            Le présent site internet et service de commerce électronique <strong>EbookStore Afrique</strong> est exploité par :
+            Le présent site internet et service de mise en relation de recrutement <strong>EbookStore Recrutement</strong> est exploité par :
           </p>
           <div className="p-5 bg-slate-50 border border-slate-150 rounded-2xl space-y-3 font-mono text-xs text-slate-700">
             <div className="flex items-center gap-2.5">
@@ -90,7 +90,7 @@ export default function MentionsLegales({ setView }: LegalPageProps) {
           </h3>
           <p className="flex items-start gap-2.5">
             <span className="font-bold text-slate-800">Responsable de la publication :</span>
-            <span className="text-slate-500">Le gérant technique d'EbookStore Afrique, joignable à l'adresse e-mail de contact ou via les coordonnées de l'exploitant indiquées ci-dessus.</span>
+            <span className="text-slate-500">Le gérant technique d'EbookStore Recrutement, joignable à l'adresse e-mail de contact ou via les coordonnées de l'exploitant indiquées ci-dessus.</span>
           </p>
         </section>
 
@@ -100,7 +100,7 @@ export default function MentionsLegales({ setView }: LegalPageProps) {
             <span className="text-indigo-600 font-mono font-bold">3.</span> Hébergement & Infrastructures Techniques
           </h3>
           <p>
-            Pour garantir un service optimal, hautement disponible et sécurisé à travers l'Afrique et le monde, les infrastructures d'EbookStore Afrique reposent sur les prestataires cloud haut de gamme suivants :
+            Pour garantir un service optimal, hautement disponible et sécurisé à travers l'Afrique et le monde, les infrastructures d'EbookStore Recrutement reposent sur les prestataires cloud haut de gamme suivants :
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Host 1 */}
@@ -137,10 +137,10 @@ export default function MentionsLegales({ setView }: LegalPageProps) {
             <span className="text-indigo-600 font-mono font-bold">4.</span> Propriété Intellectuelle & Droits réservés
           </h3>
           <p>
-            La charte graphique du site, l'identité visuelle, l'arborescence, les textes et les logos de la marque EbookStore Afrique sont la propriété exclusive de l'exploitant. Toute reproduction non autorisée de la plateforme, de son code d'affichage ou de ses éléments d'identité graphique constitue une contrefaçon sanctionnée par le droit de la propriété intellectuelle.
+            La charte graphique du site, l'identité visuelle, l'arborescence, les textes et les logos de la marque EbookStore Recrutement sont la propriété exclusive de l'exploitant. Toute reproduction non autorisée de la plateforme, de son code d'affichage ou de ses éléments d'identité graphique constitue une contrefaçon sanctionnée par le droit de la propriété intellectuelle.
           </p>
           <p className="mt-2">
-            Les ebooks numériques au format PDF sont la propriété intellectuelle de leurs auteurs respectifs. Leur achat ou téléchargement ne transfère aucun droit de propriété intellectuelle à l'utilisateur, qui dispose d'une licence de lecture à usage personnel uniquement.
+            Les CVs au format PDF, biographies professionnelles et informations d'offres d'emploi publiés sur la plateforme sont la propriété de leurs auteurs ou entreprises respectifs. Leur mise à disposition ne transfère aucun droit de propriété intellectuelle à un tiers sans autorisation expresse.
           </p>
         </section>
 
@@ -150,7 +150,7 @@ export default function MentionsLegales({ setView }: LegalPageProps) {
             <span className="text-indigo-600 font-mono font-bold">5.</span> Litiges & Juridiction
           </h3>
           <p>
-            L'utilisation du site internet EbookStore Afrique est régie par les présentes mentions légales. L'exploitant se réserve le droit de modifier le contenu des présentes mentions légales à tout moment afin de refléter l'évolution de son statut commercial officiel.
+            L'utilisation du site internet EbookStore Recrutement est régie par les présentes mentions légales. L'exploitant se réserve le droit de modifier le contenu des présentes mentions légales à tout moment afin de refléter l'évolution de son statut commercial officiel.
           </p>
         </section>
       </div>
@@ -158,10 +158,10 @@ export default function MentionsLegales({ setView }: LegalPageProps) {
       {/* Action Footer */}
       <div className="text-center">
         <button
-          onClick={() => setView("catalog")}
+          onClick={() => setView("home")}
           className="px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-sm transition-all cursor-pointer"
         >
-          Retourner au catalogue d'ebooks
+          Retourner à l'accueil de la plateforme
         </button>
       </div>
     </div>

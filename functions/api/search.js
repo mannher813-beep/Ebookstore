@@ -25,34 +25,39 @@ export async function onRequest(context) {
     };
 
     // Run fetches in parallel
-    const [ebooksRes, cvsRes, biosRes] = await Promise.all([
-      fetch(`${supabaseUrl}/rest/v1/ebooks?select=id,titre,description,prix,categorie`, { headers }),
+    const [jobsRes, cvsRes, biosRes] = await Promise.all([
+      fetch(`${supabaseUrl}/rest/v1/job_offers?statut=eq.active&moderation_status=eq.approved&select=id,titre,slug,description,entreprise,lieu,type_contrat,secteur`, { headers }),
       fetch(`${supabaseUrl}/rest/v1/cvs?visibility=neq.private&select=reference,visibility,summary,data,pdf_url`, { headers }),
       fetch(`${supabaseUrl}/rest/v1/bios?is_public=eq.true&select=slug,content`, { headers })
     ]);
 
-    let ebooks = [];
+    let jobs = [];
     let cvs = [];
     let bios = [];
 
-    if (ebooksRes.ok) ebooks = await ebooksRes.json();
+    if (jobsRes.ok) jobs = await jobsRes.json();
     if (cvsRes.ok) cvs = await cvsRes.json();
     if (biosRes.ok) bios = await biosRes.json();
 
-    // Format and filter Ebooks
-    const formattedEbooks = ebooks.map(b => ({
-      type: "ebook",
-      id: b.id,
-      titre: b.titre,
-      description: b.description,
-      prix: b.prix,
-      categorie: b.categorie,
-      url: `https://ebookstore-73b.pages.dev/ebook/${b.id}`
-    })).filter(b => 
+    // Format and filter Job Offers
+    const formattedJobs = jobs.map(j => ({
+      type: "job",
+      id: j.id,
+      titre: j.titre,
+      description: j.description,
+      entreprise: j.entreprise,
+      lieu: j.lieu,
+      type_contrat: j.type_contrat,
+      secteur: j.secteur,
+      slug: j.slug,
+      url: `https://ebookstore-73b.pages.dev/job/${j.slug}`
+    })).filter(j => 
       !query || 
-      b.titre.toLowerCase().includes(query) || 
-      b.description.toLowerCase().includes(query) || 
-      b.categorie.toLowerCase().includes(query)
+      j.titre.toLowerCase().includes(query) || 
+      j.description.toLowerCase().includes(query) || 
+      (j.entreprise && j.entreprise.toLowerCase().includes(query)) ||
+      (j.lieu && j.lieu.toLowerCase().includes(query)) ||
+      (j.secteur && j.secteur.toLowerCase().includes(query))
     );
 
     // Format and filter CVs
@@ -105,7 +110,7 @@ export async function onRequest(context) {
     );
 
     const combinedResults = [
-      ...formattedEbooks,
+      ...formattedJobs,
       ...formattedCvs,
       ...formattedBios
     ];
