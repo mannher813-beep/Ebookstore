@@ -37,7 +37,7 @@ export async function onRequest(context) {
     };
   };
 
-  // Helper to verify Supabase JWT token and get user info
+  // Helper to verify token (supports both Supabase JWT and Google OAuth token)
   const verifyUserToken = async () => {
     const authHeader = request.headers.get("Authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -46,6 +46,7 @@ export async function onRequest(context) {
     const token = authHeader.split(" ")[1];
     if (!token) return null;
 
+    // 1. Try verifying as Supabase JWT
     try {
       const res = await fetch(`${supabaseUrl}/auth/v1/user`, {
         headers: {
@@ -58,8 +59,85 @@ export async function onRequest(context) {
         return { user, token };
       }
     } catch (err) {
-      console.error("Token verification failed in MCP:", err);
+      console.error("Supabase token verification failed:", err);
     }
+
+    // 2. Fallback: Try verifying as Google OAuth Access/ID Token
+    try {
+      let email = null;
+      let name = null;
+
+      // Check via Google UserInfo API (Access Token)
+      const gUserInfoRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (gUserInfoRes.ok) {
+        const gData = await gUserInfoRes.json();
+        email = gData.email;
+        name = gData.name;
+      } else {
+        // Check via Google TokenInfo API (ID Token)
+        const gTokenInfoRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(token)}`);
+        if (gTokenInfoRes.ok) {
+          const gData = await gTokenInfoRes.json();
+          email = gData.email;
+          name = gData.name;
+        }
+      }
+
+      if (email) {
+        let foundUser = null;
+
+        if (supabaseServiceKey) {
+          // List users via Supabase Admin API
+          const usersRes = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
+            headers: {
+              "apikey": supabaseServiceKey,
+              "Authorization": `Bearer ${supabaseServiceKey}`
+            }
+          });
+          if (usersRes.ok) {
+            const usersData = await usersRes.json();
+            const usersList = Array.isArray(usersData) ? usersData : (usersData.users || []);
+            foundUser = usersList.find(u => u.email && u.email.toLowerCase() === email.toLowerCase());
+          }
+
+          // Auto-provision user if they don't exist in Supabase yet
+          if (!foundUser) {
+            const createRes = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
+              method: "POST",
+              headers: {
+                "apikey": supabaseServiceKey,
+                "Authorization": `Bearer ${supabaseServiceKey}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                email: email,
+                email_confirm: true,
+                user_metadata: { name: name || "" }
+              })
+            });
+            if (createRes.ok) {
+              foundUser = await createRes.json();
+              console.log("Auto-created Supabase user for Google OAuth:", email);
+            }
+          }
+        }
+
+        if (foundUser) {
+          return {
+            user: {
+              id: foundUser.id,
+              email: foundUser.email
+            },
+            token: supabaseServiceKey // return service key so that REST queries can bypass RLS on behalf of this verified user
+          };
+        }
+      }
+    } catch (err) {
+      console.error("Google token verification/mapping failed:", err);
+    }
+
     return null;
   };
 
@@ -752,7 +830,7 @@ export async function onRequest(context) {
               const { id, titre_poste, competences, experiences, formation, summary, lieu, secteur, annees_experience, disponible, nom, visibility, pdf_url } = args || {};
 
               // Check ownership first
-              const checkRes = await fetch(`${supabaseUrl}/rest/v1/cvs?id=eq.${id}&select=user_id,data`, { headers: getSupabaseHeaders() });
+              const checkRes = await fetch(`${supabaseUrl}/rest/v1/cvs?id=eq.${id}&select=user_id,data`, { headers: getSupabaseHeaders(token) });
               if (!checkRes.ok) {
                 result = { content: [{ type: "text", text: "CV introuvable ou erreur de requête." }], isError: true };
                 break;
@@ -840,7 +918,7 @@ export async function onRequest(context) {
               const { slug, content, is_public, secteur, lieu } = args || {};
 
               // Check ownership
-              const checkRes = await fetch(`${supabaseUrl}/rest/v1/bios?user_id=eq.${user.id}&select=id`, { headers: getSupabaseHeaders() });
+              const checkRes = await fetch(`${supabaseUrl}/rest/v1/bios?user_id=eq.${user.id}&select=id`, { headers: getSupabaseHeaders(token) });
               if (!checkRes.ok) {
                 result = { content: [{ type: "text", text: "Biographie introuvable ou erreur technique." }], isError: true };
                 break;
@@ -877,7 +955,7 @@ export async function onRequest(context) {
 
             else if (name === "telecharger_pdf") {
               const { cv_id } = args || {};
-              const res = await fetch(`${supabaseUrl}/rest/v1/cvs?id=eq.${cv_id}&select=pdf_url,is_public,user_id,reference`, { headers: getSupabaseHeaders() });
+              const res = await fetch(`${supabaseUrl}/rest/v1/cvs?id=eq.${cv_id}&select=pdf_url,is_public,user_id,reference`, { headers: getSupabaseHeaders(token) });
               if (res.ok) {
                 const list = await res.json();
                 if (list.length === 0) {
@@ -968,11 +1046,11 @@ export async function onRequest(context) {
                   try {
                     let detailRes;
                     if (item.item_type === "cv") {
-                      detailRes = await fetch(`${supabaseUrl}/rest/v1/cvs?id=eq.${item.item_id}&select=*`, { headers: getSupabaseHeaders() });
+                      detailRes = await fetch(`${supabaseUrl}/rest/v1/cvs?id=eq.${item.item_id}&select=*`, { headers: getSupabaseHeaders(token) });
                     } else if (item.item_type === "bio") {
-                      detailRes = await fetch(`${supabaseUrl}/rest/v1/bios?id=eq.${item.item_id}&select=*`, { headers: getSupabaseHeaders() });
+                      detailRes = await fetch(`${supabaseUrl}/rest/v1/bios?id=eq.${item.item_id}&select=*`, { headers: getSupabaseHeaders(token) });
                     } else if (item.item_type === "job_offer") {
-                      detailRes = await fetch(`${supabaseUrl}/rest/v1/job_offers?id=eq.${item.item_id}&select=*`, { headers: getSupabaseHeaders() });
+                      detailRes = await fetch(`${supabaseUrl}/rest/v1/job_offers?id=eq.${item.item_id}&select=*`, { headers: getSupabaseHeaders(token) });
                     }
                     if (detailRes && detailRes.ok) {
                       const detailData = await detailRes.json();
@@ -1000,7 +1078,7 @@ export async function onRequest(context) {
               const { job_offer_id, cv_id, bio_id, message } = args || {};
 
               // 1. Verify offer is active and approved
-              const offerRes = await fetch(`${supabaseUrl}/rest/v1/job_offers?id=eq.${job_offer_id}&select=statut,moderation_status`, { headers: getSupabaseHeaders() });
+              const offerRes = await fetch(`${supabaseUrl}/rest/v1/job_offers?id=eq.${job_offer_id}&select=statut,moderation_status`, { headers: getSupabaseHeaders(token) });
               if (!offerRes.ok) {
                 result = { content: [{ type: "text", text: "Impossible de valider l'offre d'emploi." }], isError: true };
                 break;
@@ -1016,7 +1094,7 @@ export async function onRequest(context) {
               }
 
               // 2. Check if already applied
-              const checkRes = await fetch(`${supabaseUrl}/rest/v1/job_applications?job_offer_id=eq.${job_offer_id}&user_id=eq.${user.id}`, { headers: getSupabaseHeaders() });
+              const checkRes = await fetch(`${supabaseUrl}/rest/v1/job_applications?job_offer_id=eq.${job_offer_id}&user_id=eq.${user.id}`, { headers: getSupabaseHeaders(token) });
               const checkData = await checkRes.json();
               if (checkData.length > 0) {
                 result = { content: [{ type: "text", text: "Vous avez déjà postulé à cette offre d'emploi." }], isError: true };
@@ -1078,7 +1156,7 @@ export async function onRequest(context) {
               const payAmount = Number(montant) || (activeDays * 1000); // 1000 XAF/day fallback
 
               // Check existing boost
-              const checkRes = await fetch(`${supabaseUrl}/rest/v1/boosts?target_type=eq.${target_type}&target_id=eq.${target_id}&statut=eq.paid&expires_at=gt.${new Date().toISOString()}&select=id`, { headers: getSupabaseHeaders() });
+              const checkRes = await fetch(`${supabaseUrl}/rest/v1/boosts?target_type=eq.${target_type}&target_id=eq.${target_id}&statut=eq.paid&expires_at=gt.${new Date().toISOString()}&select=id`, { headers: getSupabaseHeaders(token) });
               if (checkRes.ok) {
                 const checkData = await checkRes.json();
                 if (checkData.length > 0) {
@@ -1354,7 +1432,7 @@ Consignes :
                 const { job_offer_id } = args || {};
 
                 // Verify owner of the offer
-                const offerRes = await fetch(`${supabaseUrl}/rest/v1/job_offers?id=eq.${job_offer_id}&select=recruiter_id`, { headers: getSupabaseHeaders() });
+                const offerRes = await fetch(`${supabaseUrl}/rest/v1/job_offers?id=eq.${job_offer_id}&select=recruiter_id`, { headers: getSupabaseHeaders(token) });
                 if (!offerRes.ok) {
                   result = { content: [{ type: "text", text: "Erreur lors de la vérification de propriété de l'offre." }], isError: true };
                   break;
@@ -1365,7 +1443,7 @@ Consignes :
                   break;
                 }
 
-                const appsRes = await fetch(`${supabaseUrl}/rest/v1/job_applications?job_offer_id=eq.${job_offer_id}&select=*`, { headers: getSupabaseHeaders() });
+                const appsRes = await fetch(`${supabaseUrl}/rest/v1/job_applications?job_offer_id=eq.${job_offer_id}&select=*`, { headers: getSupabaseHeaders(token) });
                 if (appsRes.ok) {
                   const list = await appsRes.json();
                   result = { content: [{ type: "text", text: JSON.stringify(list, null, 2) }] };
@@ -1378,7 +1456,7 @@ Consignes :
                 const { application_id, statut } = args || {};
 
                 // Get application
-                const appRes = await fetch(`${supabaseUrl}/rest/v1/job_applications?id=eq.${application_id}&select=job_offer_id`, { headers: getSupabaseHeaders() });
+                const appRes = await fetch(`${supabaseUrl}/rest/v1/job_applications?id=eq.${application_id}&select=job_offer_id`, { headers: getSupabaseHeaders(token) });
                 if (!appRes.ok) {
                   result = { content: [{ type: "text", text: "Candidature introuvable." }], isError: true };
                   break;
@@ -1390,7 +1468,7 @@ Consignes :
                 }
 
                 // Verify recruiter owns the associated job offer
-                const offerRes = await fetch(`${supabaseUrl}/rest/v1/job_offers?id=eq.${appData[0].job_offer_id}&select=recruiter_id`, { headers: getSupabaseHeaders() });
+                const offerRes = await fetch(`${supabaseUrl}/rest/v1/job_offers?id=eq.${appData[0].job_offer_id}&select=recruiter_id`, { headers: getSupabaseHeaders(token) });
                 const offerData = await offerRes.json();
                 if (offerData.length === 0 || offerData[0].recruiter_id !== user.id) {
                   result = { content: [{ type: "text", text: "Accès non autorisé. Vous n'êtes pas le recruteur lié à cette offre d'emploi." }], isError: true };
